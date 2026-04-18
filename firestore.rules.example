@@ -1,0 +1,46 @@
+rules_version = '2';
+// Copy into Firebase Console → Firestore → Rules (or use Firebase CLI deploy).
+// Adjust collection names and household rules to match how your app shares data.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    // Per-user profile and data under users/{uid}/...
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+      match /{subpath=**} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // Household / shared collections — tighten so only members can read/write.
+    // Below uses "any signed-in user" as a starting point; refine before production.
+    match /households/{householdId} {
+      allow read, write: if signedIn();
+    }
+
+    match /household_members/{memberId} {
+      allow read, write: if signedIn() && request.auth.uid == memberId;
+    }
+
+    match /shared_transactions/{id} {
+      allow read, write: if signedIn();
+    }
+
+    match /settlements/{id} {
+      allow read, write: if signedIn();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

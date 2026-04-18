@@ -1,0 +1,1401 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes">
+    <meta name="description"
+        content="Kaleb Ez Tracker — personal finance dashboard for spending, goals, bills, analytics, and household sharing.">
+    <title>Kaleb Ez Tracker · Financial Dashboard</title>
+
+    <!-- ICON -->
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192x192.png">
+
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#6366f1">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Kaleb Ez Tracker">
+
+    <!-- Scripts -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- SweetAlert2 for beautiful confirmation dialogs -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <!-- Fonts & Icons -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="manifest" href="manifest.json">
+
+    <!-- ICONS -->
+    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192x192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512x512.png">
+
+</head>
+
+<body>
+    <script>document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') === 'dark' ? 'dark' : 'light');</script>
+    <div id="ios-status-bar" style="height: env(safe-area-inset-top); width: 100%; background: transparent;"></div>
+    <!-- Install Banner -->
+    <div id="installBanner" class="install-banner">
+        <div class="install-banner-content">
+            <i class="fas fa-download"></i>
+            <span>Install Kaleb Ez Tracker for quick access</span>
+        </div>
+        <div>
+            <button id="installBtn">Install</button>
+            <button class="close-btn" onclick="closeInstallBanner()"><i class="fas fa-times"></i></button>
+        </div>
+    </div>
+
+    <!-- Offline Indicator -->
+    <div id="offlineIndicator" class="offline-indicator">
+        <i class="fas fa-wifi"></i>
+        <span>You're offline - using cached data</span>
+    </div>
+
+    <!-- Loader -->
+    <div id="loader">
+        <div class="spinner"></div>
+        <div style="margin-top: 16px; color: var(--gray-500); font-size: 13px;">Loading your dashboard...</div>
+    </div>
+
+    <!-- Main App -->
+    <div id="mainApp" style="display: none;">
+        <!-- Modern Navigation -->
+        <nav class="modern-nav">
+            <!-- Simple Working Hamburger Button -->
+            <button type="button" class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="Open navigation menu">
+                <i class="fas fa-bars" aria-hidden="true"></i>
+            </button>
+
+            <!-- Logo -->
+            <div class="nav-brand">
+                <div class="logo-animated" onclick="switchView('dashboard')">
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                        <path d="M16 2L2 9L16 16L30 9L16 2Z" stroke="currentColor" stroke-width="2" fill="none" />
+                        <path d="M2 16L16 23L30 16" stroke="currentColor" stroke-width="2" fill="none"
+                            stroke-dasharray="4 4" />
+                        <circle cx="16" cy="16" r="3" fill="currentColor" />
+                    </svg>
+                    <span>Kaleb Ez Tracker</span>
+                </div>
+            </div>
+
+            <!-- Navigation Menu -->
+            <div class="nav-menu" id="navMenu">
+                <button class="nav-item" data-view="dashboard">
+                    <i class="fas fa-chart-line"></i><span>Dashboard</span>
+                </button>
+                <button class="nav-item" data-view="transactions">
+                    <i class="fas fa-list-ul"></i><span>Transactions</span>
+                </button>
+                <button class="nav-item" data-view="analytics">
+                    <i class="fas fa-chart-bar"></i><span>Analytics</span>
+                </button>
+                <button class="nav-item" data-view="goals">
+                    <i class="fas fa-bullseye"></i><span>Goals</span>
+                </button>
+                <button class="nav-item" data-view="bills">
+                    <i class="fas fa-file-invoice"></i><span>Bills</span>
+                </button>
+                <button class="nav-item" data-view="household">
+                    <i class="fas fa-users"></i><span>Household</span>
+                </button>
+                <button class="nav-item" data-view="settings">
+                    <i class="fas fa-cog"></i><span>Settings</span>
+                </button>
+            </div>
+
+            <!-- Overlay -->
+            <div id="menuOverlay" class="menu-overlay"></div>
+
+            <!-- Right Side Actions -->
+            <div class="nav-actions">
+                <button type="button" class="theme-toggle" onclick="toggleTheme()"
+                    aria-label="Toggle light or dark theme">
+                    <i class="fas fa-moon" aria-hidden="true"></i>
+                </button>
+                <div class="user-menu">
+                    <div class="user-avatar-container" onclick="toggleUserMenu()">
+                        <canvas id="userAvatarCanvas" width="40" height="40" class="user-avatar"></canvas>
+                        <div class="avatar-status-dot"></div>
+                    </div>
+                    <div class="user-dropdown" id="userDropdown">
+                        <div class="user-info">
+                            <strong id="userName">User</strong>
+                            <span id="userEmail"></span>
+                        </div>
+                        <button class="dropdown-item" onclick="showAvatarModal()">
+                            <i class="fas fa-user-circle"></i> Change Avatar
+                        </button>
+                        <button class="dropdown-item" id="logoutBtn">
+                            <i class="fas fa-sign-out-alt"></i> Sign Out
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Overlay for when menu is open -->
+        <div id="menuOverlay" class="menu-overlay" onclick="closeMobileMenu()"></div>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Dashboard View -->
+            <div id="dashboardView" class="view active">
+                <div class="mobile-top-spacer"></div>
+
+                <!-- Daily Spending Tip Card -->
+                <div class="daily-tip-card" id="dailyTipCard">
+                    <div class="tip-icon">
+                        <i class="fas fa-lightbulb"></i>
+                    </div>
+                    <div class="tip-content">
+                        <div class="tip-label">💡 Daily Financial Tip</div>
+                        <div class="tip-text" id="dailyTipText">Loading your financial tip...</div>
+                        <div class="tip-footer">
+                            <button class="tip-refresh" onclick="refreshDailyTip()">
+                                <i class="fas fa-sync-alt"></i> New Tip
+                            </button>
+                            <button class="tip-share" onclick="shareTip()">
+                                <i class="fas fa-share-alt"></i> Share
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Net Worth Card -->
+                <div class="net-worth-card">
+                    <div class="net-worth-glow"></div>
+                    <div class="net-worth-content">
+                        <div class="net-worth-left">
+                            <p class="net-worth-label">Total Net Worth</p>
+                            <h1 id="netWorthVal" class="net-worth-value">₱ 0.00</h1>
+                            <div class="net-worth-change">
+                                <span id="netWorthChange">+0%</span>
+                                <span>vs last month</span>
+                            </div>
+                        </div>
+                        <div class="net-worth-right">
+                            <div class="net-worth-badge" id="netStatus">
+                                <i class="fas fa-chart-line"></i> Ready
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats Grid -->
+                <div class="stats-grid">
+                    <div class="stat-card" onclick="showDetailedStats('today')">
+                        <div class="stat-icon"><i class="fas fa-shopping-cart"></i></div>
+                        <p class="stat-label">Today's Spending</p>
+                        <h3 id="spentToday" class="stat-value">₱ 0.00</h3>
+                        <div class="stat-trend" id="todayTrend">-12%</div>
+                    </div>
+                    <div class="stat-card" onclick="showDetailedStats('week')">
+                        <div class="stat-icon"><i class="fas fa-calendar-week"></i></div>
+                        <p class="stat-label">This Week</p>
+                        <h3 id="spent7Days" class="stat-value">₱ 0.00</h3>
+                        <div class="stat-trend" id="weekTrend">+5%</div>
+                    </div>
+                    <div class="stat-card" onclick="showDetailedStats('month')">
+                        <div class="stat-icon"><i class="fas fa-calendar-alt"></i></div>
+                        <p class="stat-label">This Month</p>
+                        <h3 id="spentMonth" class="stat-value">₱ 0.00</h3>
+                        <div class="stat-trend" id="monthTrend">-3%</div>
+                    </div>
+                    <div class="stat-card" onclick="showDetailedStats('cash')">
+                        <div class="stat-icon"><i class="fas fa-money-bill-wave"></i></div>
+                        <p class="stat-label">Cash on Hand</p>
+                        <h3 id="cashOnHand" class="stat-value">₱ 0.00</h3>
+                        <div class="stat-trend" id="cashTrend">+0%</div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="quick-actions-section">
+                    <h3 class="section-title">Quick Actions</h3>
+                    <div class="quick-actions-grid">
+                        <!-- EXPENSE QUICK ACTIONS -->
+                        <button class="quick-action-btn" onclick="quickAdd('expense', '🍔 Food & Groceries')">
+                            <i class="fas fa-shopping-basket"></i><span>Food</span>
+                        </button>
+                        <button class="quick-action-btn" onclick="quickAdd('expense', '👶 Baby Kaleb Needs')">
+                            <i class="fas fa-baby-carriage"></i><span>Baby</span>
+                        </button>
+                        <button class="quick-action-btn" onclick="quickAdd('expense', '🚗 Gas / Fuel')">
+                            <i class="fas fa-gas-pump"></i><span>Gas</span>
+                        </button>
+                        <button class="quick-action-btn" onclick="quickAdd('expense', '💊 Health & Medicine')">
+                            <i class="fas fa-pills"></i><span>Health</span>
+                        </button>
+
+                        <!-- INCOME QUICK ACTIONS -->
+                        <button class="quick-action-btn" onclick="quickAdd('income', '💼 Monthly Salary')">
+                            <i class="fas fa-briefcase"></i><span>Salary</span>
+                        </button>
+                        <button class="quick-action-btn" onclick="quickAdd('income', '🏪 Business Income')">
+                            <i class="fas fa-store"></i><span>Business</span>
+                        </button>
+
+                        <!-- SAVINGS QUICK ACTIONS -->
+                        <button class="quick-action-btn" onclick="quickAdd('savings', '💰 General Savings')">
+                            <i class="fas fa-piggy-bank"></i><span>Savings</span>
+                        </button>
+
+                        <!-- ACTIONS -->
+                        <button class="quick-action-btn" onclick="showGoalModal()">
+                            <i class="fas fa-bullseye"></i><span>New Goal</span>
+                        </button>
+                        <button class="quick-action-btn" onclick="showBillModal()">
+                            <i class="fas fa-file-invoice"></i><span>Add Bill</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Overview Cards -->
+                <div class="overview-grid">
+                    <div class="overview-card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-chart-line"></i> Expense Limit</h3><button class="icon-btn"
+                                onclick="toggleInput('budgetGroup')"><i class="fas fa-pen"></i></button>
+                        </div>
+                        <div class="card-body">
+                            <div class="amount-display"><span id="budgetText" class="current-amount">₱ 0.00</span><span
+                                    class="total-amount">of ₱ 0.00</span></div>
+                            <div class="progress">
+                                <div id="budgetBar" class="progress-bar primary" style="width: 0%"></div>
+                            </div>
+                            <div id="budgetGroup" class="input-group hidden"><input id="setBudgetInput" type="text"
+                                    placeholder="Set monthly budget (0 = no limit)" class="form-control"><button
+                                    class="btn-primary btn-sm" style="margin-top: var(--space-sm); width: 100%;"
+                                    onclick="updateBudget()">Save Budget</button></div>
+                        </div>
+                    </div>
+                    <div class="overview-card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-credit-card"></i> Debt Tracker</h3><button class="icon-btn"
+                                onclick="toggleInput('debtGroup')"><i class="fas fa-pen"></i></button>
+                        </div>
+                        <div class="card-body">
+                            <div class="amount-display"><span id="debtRemainingVal" class="current-amount danger">₱ 0.00
+                                    Left</span></div>
+                            <div class="progress">
+                                <div id="debtBar" class="progress-bar debt" style="width: 0%"></div>
+                            </div>
+                            <div id="debtGroup" class="input-group hidden"><input id="setDebtInput" type="text"
+                                    placeholder="Set debt goal (0 = no goal)" class="form-control"><button
+                                    class="btn-primary btn-sm" style="margin-top: var(--space-sm); width: 100%;"
+                                    onclick="updateDebtGoal()">Save
+                                    Goal</button></div>
+                        </div>
+                    </div>
+                    <div class="overview-card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-piggy-bank"></i> Savings Goal</h3><button class="icon-btn"
+                                onclick="toggleInput('savingsGroup')"><i class="fas fa-pen"></i></button>
+                        </div>
+                        <div class="card-body">
+                            <div class="amount-display"><span id="savingsVal" class="current-amount success">₱ 0.00
+                                    Saved</span></div>
+                            <div class="progress">
+                                <div id="savingsBar" class="progress-bar savings" style="width: 0%"></div>
+                            </div>
+                            <div id="savingsGroup" class="input-group hidden"><input id="setSavingsInput" type="text"
+                                    placeholder="Set savings target (0 = no target)" class="form-control"><button
+                                    class="btn-primary btn-sm" style="margin-top: var(--space-sm); width: 100%;"
+                                    onclick="updateSavingsGoal()">Save Target</button></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Monthly Breakdown Section -->
+                <div class="overview-grid" style="margin-bottom: var(--space-xl);">
+                    <div class="overview-card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-chart-pie"></i> Monthly Breakdown</h3>
+                        </div>
+                        <div class="card-body">
+                            <h4 style="font-size: 12px; color: var(--gray-500); margin-bottom: 8px;">Expenses</h4>
+                            <div id="expenseHistory" style="max-height: 200px; overflow-y: auto;"></div>
+                            <div style="border-top: 1px solid var(--gray-200); margin: 12px 0;"></div>
+                            <h4 style="font-size: 12px; color: var(--gray-500); margin-bottom: 8px;">Income</h4>
+                            <div id="incomeHistory" style="max-height: 200px; overflow-y: auto;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts Section -->
+                <div class="charts-section">
+                    <div class="chart-card expanded">
+                        <div class="card-header">
+                            <h3><i class="fas fa-chart-pie"></i> Spending by Category</h3><select id="categoryPeriod"
+                                class="period-select" onchange="updateCategoryChart()">
+                                <option value="week">This Week</option>
+                                <option value="month" selected>This Month</option>
+                                <option value="year">This Year</option>
+                            </select>
+                        </div>
+                        <div class="chart-container"><canvas id="categoryChart"></canvas></div>
+                        <div id="categoryLegend" class="chart-legend"></div>
+                    </div>
+                    <div class="chart-card expanded">
+                        <div class="card-header">
+                            <h3><i class="fas fa-chart-line"></i> Spending Trend</h3><select id="trendPeriod"
+                                class="period-select" onchange="updateTrendChart()">
+                                <option value="week">Last 7 Days</option>
+                                <option value="month" selected>Last 30 Days</option>
+                                <option value="year">Last 12 Months</option>
+                            </select>
+                        </div>
+                        <div class="chart-container"><canvas id="trendChart"></canvas></div>
+                        <div class="chart-legend">
+                            <div class="legend-item"><span class="legend-color"
+                                    style="background: var(--success);"></span><span>Income</span></div>
+                            <div class="legend-item"><span class="legend-color"
+                                    style="background: var(--danger);"></span><span>Expenses</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Transactions View -->
+            <div id="transactionsView" class="view">
+                <div class="transactions-header">
+                    <h2>All Transactions</h2>
+                    <div class="transactions-filters">
+                        <div class="filter-group"><i class="fas fa-search"></i><input type="text" id="searchBar"
+                                placeholder="Search transactions..."></div>
+                        <div class="filter-group"><i class="fas fa-calendar"></i>
+                            <div class="filter-month-shell"><input type="month" id="monthFilter"
+                                    aria-label="Filter by month"></div>
+                        </div>
+                        <div class="filter-group"><i class="fas fa-filter"></i><select id="typeFilter"
+                                onchange="filterTransactions()">
+                                <option value="all">All Types</option>
+                                <option value="income">Income</option>
+                                <option value="expense">Expense</option>
+                                <option value="savings">Savings</option>
+                            </select></div>
+                        <div id="balanceLabel" class="balance-badge">₱ 0.00</div>
+                        <button class="btn-primary" onclick="showAddTransactionModal()" style="padding: 12px 24px;">
+                            <i class="fas fa-plus"></i> Add Transaction
+                        </button>
+                    </div>
+                </div>
+                <div class="transactions-table-container">
+                    <table class="transactions-table">
+                        <thead>
+                            <tr>
+                                <th>Category & Notes</th>
+                                <th>Amount</th>
+                                <th>Date</th>
+                                <th style="text-align: center;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody">
+                            <tr>
+                                <td colspan="4" style="text-align: center; padding: 3rem;"><i class="fas fa-inbox"
+                                        style="font-size: 3rem; color: var(--gray-400); margin-bottom: 1rem; display: block;"></i>No
+                                    transactions found</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination" id="pagination"></div>
+            </div>
+
+            <!-- Goals View -->
+            <div id="goalsView" class="view">
+                <div class="transactions-header">
+                    <h2>Savings Goals</h2>
+                    <div class="transactions-filters"><button class="btn-primary" onclick="showGoalModal()"><i
+                                class="fas fa-plus"></i> New Goal</button></div>
+                </div>
+                <div id="goalsSection" class="goals-section">
+                    <div id="goalsContainer" class="goals-grid"></div>
+                </div>
+            </div>
+
+            <!-- Bills View -->
+            <div id="billsView" class="view">
+                <div class="transactions-header">
+                    <h2>Upcoming Bills</h2>
+                    <div class="transactions-filters"><button class="btn-primary" onclick="showBillModal()"><i
+                                class="fas fa-plus"></i> Add Bill</button></div>
+                </div>
+                <div id="billsSection" class="bills-section">
+                    <div id="billsContainer" class="bills-grid"></div>
+                </div>
+            </div>
+
+            <div id="householdView" class="view">
+                <div class="transactions-header">
+                    <h2><i class="fas fa-users"></i> Shared Household Budget</h2>
+                    <div class="transactions-filters">
+                        <button class="btn-primary" onclick="window.showCreateHouseholdModal()">
+                            <i class="fas fa-plus"></i> Create Household
+                        </button>
+                        <button class="btn-secondary" onclick="window.showJoinHouseholdModal()">
+                            <i class="fas fa-sign-in-alt"></i> Join Household
+                        </button>
+                    </div>
+                </div>
+                <div id="householdContainer">
+                    <div class="empty-state">
+                        <i class="fas fa-users" style="font-size: 48px; opacity: 0.5;"></i>
+                        <p>No household yet. Create or join a household to start sharing expenses!</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Create Household Modal -->
+            <div id="createHouseholdModal" class="modal">
+                <div class="modal-content">
+                    <button class="modal-close" onclick="closeCreateHouseholdModal()"><i
+                            class="fas fa-times"></i></button>
+                    <h2><i class="fas fa-home"></i> Create Household</h2>
+                    <div class="form-group">
+                        <label class="form-label">Household Name</label>
+                        <input type="text" id="householdName" class="form-control"
+                            placeholder="e.g., Cajes Family, Roommates">
+                    </div>
+                    <!-- REMOVE the inviteEmails section -->
+                    <button class="btn-primary" onclick="createHousehold()" style="width:100%">Create
+                        Household</button>
+                </div>
+            </div>
+
+            <!-- Join Household Modal -->
+            <div id="joinHouseholdModal" class="modal">
+                <div class="modal-content">
+                    <button class="modal-close" onclick="closeJoinHouseholdModal()"><i
+                            class="fas fa-times"></i></button>
+                    <h2><i class="fas fa-sign-in-alt"></i> Join Household</h2>
+                    <div class="form-group">
+                        <label class="form-label">Household Code</label>
+                        <input type="text" id="householdCode" class="form-control" placeholder="Enter household code">
+                    </div>
+                    <button class="btn-primary" onclick="joinHousehold()" style="width:100%">Join
+                        Household</button>
+                </div>
+            </div>
+
+            <!-- Analytics View -->
+            <div id="analyticsView" class="view">
+                <div class="analytics-header">
+                    <h2>Financial Analytics</h2>
+                    <div class="analytics-filters">
+                        <select id="analyticsPeriod" class="period-select" onchange="updateAnalytics()">
+                            <option value="week">Last 7 Days</option>
+                            <option value="month" selected>Last 30 Days</option>
+                            <option value="quarter">Last 3 Months</option>
+                            <option value="year">Last 12 Months</option>
+                            <option value="all">All Time</option>
+                        </select>
+                        <button class="btn-primary" onclick="exportAnalyticsReport()" style="padding: 8px 16px;">
+                            <i class="fas fa-download"></i> Export Report
+                        </button>
+                    </div>
+                </div>
+
+                <div class="analytics-metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-icon"><i class="fas fa-chart-line"></i></div>
+                        <div class="metric-info">
+                            <p class="metric-label">Average Daily Spend</p>
+                            <h3 id="avgDailySpend" class="metric-value">₱ 0.00</h3><span id="avgDailyTrend"
+                                class="metric-trend">vs previous period</span>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-icon"><i class="fas fa-percent"></i></div>
+                        <div class="metric-info">
+                            <p class="metric-label">Savings Rate</p>
+                            <h3 id="savingsRate" class="metric-value">0%</h3><span id="savingsRateTrend"
+                                class="metric-trend">of total income</span>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-icon"><i class="fas fa-chart-pie"></i></div>
+                        <div class="metric-info">
+                            <p class="metric-label">Top Category</p>
+                            <h3 id="topCategory" class="metric-value">-</h3><span id="topCategoryPercent"
+                                class="metric-trend">0% of expenses</span>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-icon"><i class="fas fa-fire"></i></div>
+                        <div class="metric-info">
+                            <p class="metric-label">Highest Spend Day</p>
+                            <h3 id="highestSpendDay" class="metric-value">-</h3><span id="highestSpendAmount"
+                                class="metric-trend">₱ 0.00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="analytics-section insights-section">
+                    <div class="section-header">
+                        <h3><i class="fas fa-lightbulb"></i> Smart Insights</h3><button class="icon-btn"
+                            onclick="refreshInsights()"><i class="fas fa-sync-alt"></i></button>
+                    </div>
+                    <div id="insightsContainer" class="insights-grid"></div>
+                </div>
+
+                <div class="analytics-section">
+                    <div class="section-header">
+                        <h3><i class="fas fa-chart-line"></i> Spending Trends</h3>
+                        <div class="trend-selector"><button class="trend-btn active"
+                                data-trend="daily">Daily</button><button class="trend-btn"
+                                data-trend="weekly">Weekly</button><button class="trend-btn"
+                                data-trend="monthly">Monthly</button></div>
+                    </div>
+                    <div class="analytics-chart-container"><canvas id="trendsChart"></canvas></div>
+                </div>
+
+                <div class="analytics-grid">
+                    <div class="analytics-card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-chart-pie"></i> Category Breakdown</h3><select
+                                id="categoryBreakdownType" onchange="updateCategoryBreakdown()">
+                                <option value="expense">Expenses</option>
+                                <option value="income">Income</option>
+                            </select>
+                        </div>
+                        <div class="chart-container" style="height: 300px;"><canvas
+                                id="categoryBreakdownChart"></canvas></div>
+                        <div id="categoryBreakdownList" class="category-list"></div>
+                    </div>
+                    <div class="analytics-card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-calendar-alt"></i> Calendar</h3>
+                        </div>
+
+                        <!-- Mobile-friendly compact controls -->
+                        <div class="cal-header-compact">
+                            <div class="cal-nav-group">
+                                <button id="calPrevBtn" class="cal-nav-btn">◀</button>
+                                <span id="calMonthYear" class="cal-month-display"></span>
+                                <button id="calNextBtn" class="cal-nav-btn">▶</button>
+                            </div>
+                            <button id="calTodayBtn" class="cal-today-compact">Today</button>
+                        </div>
+
+                        <div id="calendarGridSimple"></div>
+                    </div>
+
+                    <!-- Day Modal -->
+                    <div id="simpleDayModal" class="modal" style="display: none;">
+                        <div class="modal-content" style="max-width: 350px; padding: 0;">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; padding: 15px; border-bottom: 1px solid var(--gray-200);">
+                                <h4 id="simpleModalDate" style="margin: 0; font-size: 14px;"></h4>
+                                <button onclick="closeSimpleModal()"
+                                    style="background: none; border: none; font-size: 18px; cursor: pointer; width: 30px; height: 30px;">✕</button>
+                            </div>
+                            <div id="simpleModalBody" style="padding: 15px; max-height: 400px; overflow-y: auto;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="analytics-grid">
+                    <div class="analytics-card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-chart-line"></i> Income vs Expenses</h3>
+                        </div>
+                        <div class="chart-container" style="height: 300px;"><canvas id="comparisonChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="analytics-card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-chart-simple"></i> Future Projection</h3><button class="icon-btn"
+                                onclick="updateProjection()"><i class="fas fa-calculator"></i></button>
+                        </div>
+                        <div class="projection-content">
+                            <div class="projection-stats">
+                                <div class="projection-item"><span>Projected Balance (3 months):</span><strong
+                                        id="projectedBalance3m">₱ 0.00</strong></div>
+                                <div class="projection-item"><span>Projected Balance (6 months):</span><strong
+                                        id="projectedBalance6m">₱ 0.00</strong></div>
+                                <div class="projection-item"><span>Projected Balance (12 months):</span><strong
+                                        id="projectedBalance12m">₱ 0.00</strong></div>
+                            </div>
+                            <div class="projection-chart"><canvas id="projectionChart" style="height: 200px;"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings View -->
+            <div id="settingsView" class="view">
+                <div class="settings-section">
+                    <h2>Preferences</h2>
+                    <div class="settings-card">
+                        <div class="setting-item"><label>Currency</label><select id="currencySelector"
+                                onchange="changeCurrency(this.value)" class="form-control"
+                                style="width: auto; min-width: 150px;">
+                                <option value="PHP">Philippine Peso (₱)</option>
+                                <option value="USD">US Dollar ($)</option>
+                                <option value="EUR">Euro (€)</option>
+                                <option value="JPY">Japanese Yen (¥)</option>
+                            </select></div>
+
+
+
+                        <h2><i class="fas fa-shield-alt"></i> Privacy & Security</h2>
+                        <!-- Add this inside the Privacy & Security settings-card -->
+                        <div class="setting-item">
+                            <label>
+                                <i class="fas fa-clock"></i> Auto-Lock Timeout
+                                <span style="font-size: 11px; color: var(--gray-500); display: block;">
+                                    Lock app after period of inactivity
+                                </span>
+                            </label>
+                            <select id="autoLockTimeout" class="form-control" onchange="changeAutoLockTimeout()"
+                                style="width: auto; min-width: 150px;">
+                                <option value="1">1 minute</option>
+                                <option value="5">5 minutes</option>
+                                <option value="10" selected>10 minutes</option>
+                                <option value="15">15 minutes</option>
+                                <option value="30">30 minutes</option>
+                                <option value="60">60 minutes</option>
+                            </select>
+                        </div>
+                        <div class="settings-card" id="privacySettings">
+                            <div class="setting-item">
+                                <label>
+                                    <i class="fas fa-lock"></i> PIN Lock
+                                    <span style="font-size: 11px; color: var(--gray-500); display: block;">Require
+                                        PIN
+                                        to open the app</span>
+                                </label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="pinLockToggle" onchange="togglePinLock()">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="setting-item">
+                                <label>
+                                    <i class="fas fa-eye-slash"></i> Hide Amounts
+                                    <span style="font-size: 11px; color: var(--gray-500); display: block;">Click
+                                        amounts
+                                        to reveal temporarily</span>
+                                </label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="hideAmounts" onchange="toggleHideAmounts()">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="setting-item">
+                                <label>
+                                    <i class="fas fa-mobile-alt"></i> Privacy Mode
+                                    <span style="font-size: 11px; color: var(--gray-500); display: block;">Blur app
+                                        when
+                                        switching apps</span>
+                                </label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="privacyMode" onchange="togglePrivacyMode()">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="setting-item">
+                                <label>
+                                    <i class="fas fa-key"></i> Change PIN
+                                    <span style="font-size: 11px; color: var(--gray-500); display: block;">Update
+                                        your
+                                        security PIN</span>
+                                </label>
+                                <button class="btn-secondary" onclick="changePin()" style="padding: 8px 16px;">Change
+                                    PIN</button>
+                            </div>
+
+                            <div class="setting-item">
+                                <label>
+                                    <i class="fas fa-trash-alt"></i> Reset PIN
+                                    <span style="font-size: 11px; color: var(--gray-500); display: block;">Reset if
+                                        you
+                                        forgot your PIN</span>
+                                </label>
+                                <button class="btn-danger" onclick="resetPin()" style="padding: 8px 16px;">Reset
+                                    PIN</button>
+                            </div>
+                        </div>
+
+                        <!-- Add after Privacy & Security section -->
+                        <h2><i class="fas fa-bell"></i> Notifications</h2>
+                        <div class="settings-card">
+                            <div class="setting-item">
+                                <label>
+                                    <i class="fas fa-bell"></i> Push Notifications
+                                    <span style="font-size: 11px; color: var(--gray-500); display: block;">
+                                        Get reminders for bills, budgets, and goals
+                                    </span>
+                                </label>
+                                <div class="toggle-switch">
+                                    <input type="checkbox" id="notificationToggle" onchange="toggleNotifications()">
+                                    <label for="notificationToggle">Enable</label>
+                                </div>
+                            </div>
+
+                            <div id="notificationSettings" style="display: none;">
+                                <div class="setting-item">
+                                    <label>Notify me about:</label>
+                                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+                                        <label style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="notifyBills" checked> 💰 Bill Reminders
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="notifyBudget" checked> ⚠️ Budget Alerts
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="notifyGoals" checked> 🎯 Goal Achievements
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="notifySummary" checked> 📊 Weekly Summary
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="setting-item">
+                                    <label>Reminder timing:</label>
+                                    <select id="reminderTime" class="form-control"
+                                        style="width: auto; min-width: 150px;">
+                                        <option value="3">3 days before</option>
+                                        <option value="2" selected>2 days before</option>
+                                        <option value="1">1 day before</option>
+                                        <option value="0">On due date</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h2><i class="fas fa-key"></i> Account Security</h2>
+                    <div class="settings-card">
+                        <!-- Change Password Button -->
+                        <div class="setting-item">
+                            <label>
+                                <i class="fas fa-exchange-alt"></i> Change Password
+                                <span style="font-size: 11px; color: var(--gray-500); display: block;">
+                                    Update your account password
+                                </span>
+                            </label>
+                            <button class="btn-primary" onclick="showChangePasswordModal()">
+                                <i class="fas fa-lock"></i> Change Password
+                            </button>
+                        </div>
+
+                        <!-- Email Verification Button & Status - SAME SIZE -->
+                        <div class="setting-item">
+                            <label>
+                                <i class="fas fa-envelope"></i> Email Verification
+                                <span style="font-size: 11px; color: var(--gray-500); display: block;">
+                                    Verify your email address
+                                </span>
+                            </label>
+                            <div style="display: flex; gap: 12px; align-items: center;">
+                                <button class="btn-secondary" id="verifyEmailBtn" onclick="sendEmailVerification()">
+                                    <i class="fas fa-paper-plane"></i> Verify Email
+                                </button>
+                                <div id="accountStatus" class="security-badge unverified">
+                                    <i class="fas fa-circle"></i>
+                                    <span id="emailVerifiedStatus">Not Verified</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h2>Data Management</h2>
+                    <div class="settings-card">
+                        <div style="display: flex; gap: var(--space-md); flex-wrap: wrap;"><button class="btn-primary"
+                                onclick="exportData()"><i class="fas fa-download"></i> Export
+                                JSON</button><button class="btn-primary" onclick="exportDataCSV()"><i
+                                    class="fas fa-file-csv"></i> Export
+                                CSV</button><button class="btn-secondary" onclick="importData()"><i
+                                    class="fas fa-upload"></i> Import Data</button><button class="btn-secondary"
+                                onclick="showBackupModal()"><i class="fas fa-database"></i> Backup &
+                                Restore</button><button class="btn-danger" onclick="clearAllData()"><i
+                                    class="fas fa-trash"></i> Clear All Data</button></div>
+                    </div>
+                    <h2><i class="fas fa-heart"></i> Support the Developer</h2>
+                    <div class="settings-card" style="padding: 24px;">
+                        <p style="margin-bottom: 24px; color: var(--gray-600); text-align: center;">
+                            Kaleb Ez Tracker is completely free. If this app helps you manage your finances
+                            better,<br>
+                            consider supporting its development with a small donation!
+                        </p>
+
+                        <!-- Desktop: Side by side, Mobile: Stacked -->
+                        <div
+                            style="display: flex; flex-wrap: wrap; gap: 30px; align-items: center; justify-content: center;">
+
+                            <!-- QR Code Section -->
+                            <div style="flex: 0 0 auto; text-align: center;">
+                                <div
+                                    style="background: white; padding: 15px; border-radius: 20px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                                    <img src="images/gcash-qr.jpeg" alt="GCash QR Code"
+                                        style="width: 160px; height: 160px; border-radius: 12px; display: block;">
+                                </div>
+                            </div>
+
+                            <!-- Info Section -->
+                            <div style="flex: 1; min-width: 250px;">
+                                <div
+                                    style="display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 16px;">
+                                    <i class="fas fa-mobile-alt" style="color: #00B4D8; font-size: 28px;"></i>
+                                    <strong style="font-size: 18px;">Donate via GCash</strong>
+                                </div>
+
+                                <p style="margin: 16px 0; color: var(--gray-700); text-align: center;">
+                                    <i class="fas fa-phone-alt"></i> GCash Number:
+                                    <strong id="gcashNumber"
+                                        style="font-size: 18px; background: var(--gray-200); padding: 6px 12px; border-radius: 30px; display: inline-block;">0951
+                                        645 6182</strong>
+                                </p>
+
+                                <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                                    <button class="btn-secondary" onclick="copyGcashNumber()"
+                                        style="display: inline-flex; align-items: center; gap: 8px;">
+                                        <i class="fas fa-copy"></i> Copy Number
+                                    </button>
+                                    <button class="btn-secondary" onclick="openGCashApp()"
+                                        style="display: inline-flex; align-items: center; gap: 8px;">
+                                        <i class="fas fa-mobile-alt"></i> Open GCash
+                                    </button>
+                                </div>
+
+                                <p
+                                    style="margin-top: 20px; font-size: 12px; color: var(--gray-500); text-align: center;">
+                                    Scan the QR code or send directly to the number above.<br>
+                                    Every coffee-sized donation helps keep this app running! ☕
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <script>
+                        // Add this function - it's missing from your code
+                        function closeInstallBanner() {
+                            const banner = document.getElementById('installBanner');
+                            if (banner) {
+                                banner.style.display = 'none';
+                                // Optional: Remember that user closed it
+                                localStorage.setItem('installBannerClosed', 'true');
+                            }
+                        }
+                        document.addEventListener('DOMContentLoaded', function () {
+                            const menuBtn = document.getElementById('mobileMenuToggle');
+                            const navMenu = document.getElementById('navMenu');
+                            const overlay = document.getElementById('menuOverlay');
+
+                            if (menuBtn) {
+                                menuBtn.onclick = function (e) {
+                                    e.preventDefault();
+                                    console.log('Button clicked!');
+                                    if (navMenu.classList.contains('open')) {
+                                        navMenu.classList.remove('open');
+                                        if (overlay) overlay.classList.remove('active');
+                                    } else {
+                                        navMenu.classList.add('open');
+                                        if (overlay) overlay.classList.add('active');
+                                    }
+                                };
+                            }
+
+                            // Close when clicking nav item
+                            document.querySelectorAll('.nav-item').forEach(btn => {
+                                btn.onclick = function () {
+                                    navMenu.classList.remove('open');
+                                    if (overlay) overlay.classList.remove('active');
+                                };
+                            });
+
+                            // Close when clicking overlay
+                            if (overlay) {
+                                overlay.onclick = function () {
+                                    navMenu.classList.remove('open');
+                                    overlay.classList.remove('active');
+                                };
+                            }
+                        });
+
+                        // ... your existing code ...
+
+                        document.addEventListener('DOMContentLoaded', function () {
+                            const menuBtn = document.getElementById('mobileMenuToggle');
+                            const navMenu = document.getElementById('navMenu');
+                            const overlay = document.getElementById('menuOverlay');
+
+                            if (menuBtn) {
+                                menuBtn.onclick = function (e) {
+                                    e.preventDefault();
+                                    console.log('Button clicked!');
+                                    if (navMenu.classList.contains('open')) {
+                                        navMenu.classList.remove('open');
+                                        if (overlay) overlay.classList.remove('active');
+                                    } else {
+                                        navMenu.classList.add('open');
+                                        if (overlay) overlay.classList.add('active');
+                                    }
+                                };
+                            }
+
+                            // Close when clicking nav item
+                            document.querySelectorAll('.nav-item').forEach(btn => {
+                                btn.onclick = function () {
+                                    navMenu.classList.remove('open');
+                                    if (overlay) overlay.classList.remove('active');
+                                };
+                            });
+
+                            // Close when clicking overlay
+                            if (overlay) {
+                                overlay.onclick = function () {
+                                    navMenu.classList.remove('open');
+                                    overlay.classList.remove('active');
+                                };
+                            }
+                        });
+
+                        // ... your existing code ...
+
+                        function copyGcashNumber() {
+                            const number = document.getElementById('gcashNumber').innerText;
+                            navigator.clipboard.writeText(number);
+
+                            if (window.sileo) {
+                                window.sileo.success('GCash number copied to clipboard!', 'Thank you!');
+                            } else {
+                                alert('GCash number copied: ' + number);
+                            }
+                        }
+
+                        function openGCashApp() {
+                            // Try to open GCash app directly
+                            window.location.href = 'gcash://';
+
+                            // Fallback: open GCash website
+                            setTimeout(() => {
+                                window.open('https://gcash.com', '_blank');
+                            }, 1000);
+                        }
+
+                    </script>
+
+                    <h2>About</h2>
+                    <div class="settings-card">
+                        <p><strong>Kaleb Ez Tracker</strong> - Personal Finance Management Dashboard</p>
+                        <p style="margin-top: var(--space-sm); color: var(--gray-500);">Version 2.0.0</p>
+                        <p style="margin-top: var(--space-sm);">Track your expenses, manage savings goals, and
+                            achieve
+                            financial freedom.</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <div id="toast" class="toast" style="display: none;"></div>
+        <button class="fab" onclick="showAddTransactionModal()"><i class="fas fa-plus"></i></button>
+
+        <!-- Add Shared Expense Modal -->
+        <div id="addSharedExpenseModal" class="modal split-modal">
+            <div class="modal-content">
+                <button class="modal-close" onclick="closeAddSharedExpenseModal()"><i class="fas fa-times"></i></button>
+                <h2><i class="fas fa-receipt"></i> Add Shared Expense</h2>
+
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <input type="text" id="sharedDesc" class="form-control" placeholder="e.g., Groceries, Rent">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Amount (₱)</label>
+                    <input type="number" id="sharedAmount" class="form-control" placeholder="0.00" step="0.01">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Paid By</label>
+                    <select id="sharedPaidBy" class="form-control"></select>
+                </div>
+
+                <div class="split-options">
+                    <button class="split-option-btn active" data-split="equal" onclick="selectSplitType('equal')">Split
+                        Equally</button>
+                    <button class="split-option-btn" data-split="percentage" onclick="selectSplitType('percentage')">By
+                        Percentage</button>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Split Among</label>
+                    <div id="splitMembersList" class="members-checkbox"></div>
+                </div>
+
+                <div id="percentageInputs" style="display: none;"></div>
+
+                <button class="btn-primary" onclick="addSharedExpense()" style="width:100%">Add Shared
+                    Expense</button>
+            </div>
+        </div>
+        <!-- FLOATING GCASH DONATION BUTTON - ADD THIS -->
+        <button class="gcash-fab" onclick="showDonationModal()">
+        </button>
+    </div>
+
+    </div>
+
+    <!-- Modals -->
+    <div id="addTransactionModal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeAddTransactionModal()"
+                style="width: 32px; height: 32px; border-radius: 50%; padding: 0; display: flex; align-items: center; justify-content: center;">
+                <i class="fas fa-times"></i>
+            </button>
+            <h2>Add Transaction</h2>
+
+            <div class="type-selector">
+                <button type="button" class="type-btn active" data-type="expense"
+                    onclick="setTransactionType('expense')">
+                    <i class="fas fa-shopping-cart"></i> Expense
+                </button>
+                <button type="button" class="type-btn" data-type="income" onclick="setTransactionType('income')">
+                    <i class="fas fa-arrow-up"></i> Income
+                </button>
+                <button type="button" class="type-btn" data-type="savings" onclick="setTransactionType('savings')">
+                    <i class="fas fa-piggy-bank"></i> Savings
+                </button>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Category</label>
+                <select id="modalCategory" class="form-control"></select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Amount</label>
+                <input type="number" id="modalAmount" class="form-control" placeholder="0.00" step="0.01">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Date</label>
+                <div class="date-wrapper">
+                    <input type="date" id="modalDate" class="form-control">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Note</label>
+                <textarea id="modalNote" class="form-control" rows="2" placeholder="Optional"></textarea>
+            </div>
+
+            <button class="btn-primary" onclick="saveNewTransaction()" style="width: 100%; justify-content: center;">
+                <i class="fas fa-save"></i> Save Transaction
+            </button>
+        </div>
+    </div>
+
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal()"><i class="fas fa-times"></i></button>
+            <h2><i class="fas fa-edit"></i> Edit Transaction</h2>
+            <div class="form-group"><label class="form-label">Type</label><select id="mType" class="form-control"
+                    onchange="updateEditCategories()">
+                    <option value="expense">Expense</option>
+                    <option value="income">Income</option>
+                    <option value="savings">Savings</option>
+                </select></div>
+            <div class="form-group"><label class="form-label">Category</label><select id="mCategory"
+                    class="form-control"></select></div>
+            <div class="form-group"><label class="form-label">Amount (₱)</label><input type="number" id="mAmount"
+                    class="form-control" step="0.01"></div>
+            <div class="form-group"><label class="form-label">Date</label><input type="date" id="mDate"
+                    class="form-control"></div>
+            <div class="form-group"><label class="form-label">Note</label><textarea id="mNote" class="form-control"
+                    rows="2"></textarea></div>
+            <div style="display: flex; gap: 10px;"><button class="btn-primary" onclick="saveEdit()"
+                    style="flex:1">Update</button><button class="btn-danger" onclick="deleteCurrentTransaction()"
+                    style="flex:1">Delete</button></div>
+        </div>
+    </div>
+
+    <div id="goalModal" class="modal">
+        <div class="modal-content"><button class="modal-close" onclick="closeGoalModal()"><i
+                    class="fas fa-times"></i></button>
+            <h2><i class="fas fa-bullseye"></i> Create New Goal</h2>
+            <div class="form-group"><label class="form-label">Goal Name</label><input type="text" id="goalName"
+                    class="form-control" placeholder="e.g., New Laptop, Emergency Fund"></div>
+            <div class="form-group"><label class="form-label">Target Amount (₱)</label><input type="number"
+                    id="goalTarget" class="form-control" placeholder="0.00" step="0.01"></div>
+            <div class="form-group"><label class="form-label">Current Amount (₱)</label><input type="number"
+                    id="goalCurrent" class="form-control" placeholder="0.00" step="0.01" value="0"></div>
+            <div class="form-group"><label class="form-label">Deadline (Optional)</label><input type="date"
+                    id="goalDeadline" class="form-control"></div><button class="btn-primary" onclick="saveGoal()"
+                style="width:100%"><i class="fas fa-save"></i> Create Goal</button>
+        </div>
+    </div>
+
+    <div id="editGoalModal" class="modal">
+        <div class="modal-content"><button class="modal-close" onclick="closeEditGoalModal()"><i
+                    class="fas fa-times"></i></button>
+            <h2><i class="fas fa-edit"></i> Edit Goal</h2><input type="hidden" id="editGoalId">
+            <div class="form-group"><label class="form-label">Goal Name</label><input type="text" id="editGoalName"
+                    class="form-control"></div>
+            <div class="form-group"><label class="form-label">Target Amount (₱)</label><input type="number"
+                    id="editGoalTarget" class="form-control" step="0.01"></div>
+            <div class="form-group"><label class="form-label">Current Amount (₱)</label><input type="number"
+                    id="editGoalCurrent" class="form-control" step="0.01"></div>
+            <div class="form-group"><label class="form-label">Deadline</label><input type="date" id="editGoalDeadline"
+                    class="form-control"></div>
+            <div style="display: flex; gap: 10px;"><button class="btn-primary" onclick="updateGoal()"
+                    style="flex:1">Update</button><button class="btn-danger" onclick="deleteGoal()"
+                    style="flex:1">Delete</button></div>
+        </div>
+    </div>
+
+    <div id="billModal" class="modal">
+        <div class="modal-content"><button class="modal-close" onclick="closeBillModal()"><i
+                    class="fas fa-times"></i></button>
+            <h2><i class="fas fa-file-invoice"></i> Add New Bill</h2>
+            <div class="form-group"><label class="form-label">Bill Name</label><input type="text" id="billName"
+                    class="form-control" placeholder="e.g., Electricity, Internet, Rent"></div>
+            <div class="form-group"><label class="form-label">Amount (₱)</label><input type="number" id="billAmount"
+                    class="form-control" placeholder="0.00" step="0.01"></div>
+            <div class="form-group"><label class="form-label">Due Date</label><input type="date" id="billDueDate"
+                    class="form-control"></div>
+            <div class="form-group"><label
+                    style="display: flex; align-items: center; gap: 10px; cursor: pointer;"><input type="checkbox"
+                        id="billAutoPaid"> Auto-paid (recurring)</label></div><button class="btn-primary"
+                onclick="saveBill()" style="width:100%"><i class="fas fa-save"></i> Add Bill</button>
+        </div>
+    </div>
+
+    <!-- Replace your existing editBillModal with this -->
+    <div id="editBillModal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeEditBillModal()"><i class="fas fa-times"></i></button>
+            <h2><i class="fas fa-edit"></i> Edit Bill</h2>
+            <input type="hidden" id="editBillId">
+            <div class="form-group">
+                <label class="form-label">Bill Name</label>
+                <input type="text" id="editBillName" class="form-control">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Amount (₱)</label>
+                <input type="number" id="editBillAmount" class="form-control" step="0.01">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Due Date</label>
+                <input type="date" id="editBillDueDate" class="form-control">
+            </div>
+            <div class="form-group">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                    <input type="checkbox" id="editBillAutoPaid"> Auto-paid (recurring)
+                </label>
+            </div>
+            <!-- NEW: Mark as paid checkbox -->
+            <div class="form-group">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                    <input type="checkbox" id="editBillPaid"> Mark as Paid
+                </label>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn-primary" onclick="updateBill()" style="flex:1">Update</button>
+                <button class="btn-danger" onclick="deleteBill()" style="flex:1">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="statsModal" class="modal">
+        <div class="modal-content"><button class="modal-close" onclick="closeStatsModal()"><i
+                    class="fas fa-times"></i></button>
+            <h2 id="statsModalTitle">Details</h2>
+            <div id="statsModalContent"></div>
+        </div>
+    </div>
+
+    <div id="backupModal" class="modal">
+        <div class="modal-content"><button class="modal-close" onclick="closeBackupModal()"><i
+                    class="fas fa-times"></i></button>
+            <h2><i class="fas fa-database"></i> Backup & Restore</h2>
+            <div class="form-group"><button class="btn-primary" onclick="backupToLocal()"
+                    style="width:100%; margin-bottom:10px"><i class="fas fa-download"></i> Create Backup</button><button
+                    class="btn-secondary" onclick="restoreFromBackup()" style="width:100%; margin-bottom:10px"><i
+                        class="fas fa-upload"></i> Restore Backup</button><label class="form-label">Import from
+                    File</label><input type="file" id="restoreFile" accept=".json" onchange="restoreFromFile(this)"
+                    class="form-control"></div>
+            <div class="form-group"><small id="lastBackup" style="color: var(--gray-500);">No backup yet</small></div>
+        </div>
+    </div>
+
+    <div id="changePasswordModal" class="modal">
+        <div class="modal-content"><button class="modal-close" onclick="closeChangePasswordModal()"><i
+                    class="fas fa-times"></i></button>
+            <h2><i class="fas fa-key"></i> Change Password</h2>
+            <div class="form-group"><label class="form-label">Current Password</label><input type="password"
+                    id="currentPassword" class="form-control" placeholder="Enter current password"></div>
+            <div class="form-group"><label class="form-label">New Password</label><input type="password"
+                    id="newPassword" class="form-control" placeholder="Enter new password">
+                <div id="passwordStrength" class="password-strength-meter">
+                    <div class="strength-bar"></div>
+                    <div class="strength-text" style="font-size: 11px; margin-top: 4px;"></div>
+                </div>
+            </div>
+            <div class="form-group"><label class="form-label">Confirm New Password</label><input type="password"
+                    id="confirmPassword" class="form-control" placeholder="Confirm new password"></div><button
+                class="btn-primary" onclick="updatePassword()" style="width:100%"><i class="fas fa-save"></i> Update
+                Password</button>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/config.js"></script>
+    <script src="js/notifications.js"></script>
+    <script src="js/analytics.js"></script>
+    <script src="js/app.js"></script>
+
+    <script>
+        window.addEventListener('error', function (e) {
+            console.error('[App]', e.error || e.message || e);
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+            console.error('[App] Unhandled rejection', e.reason);
+        });
+
+        // Initialize Firebase and App
+        firebase.initializeApp(firebaseConfig);
+        window.auth = firebase.auth();
+        window.db = firebase.firestore();
+
+        // Make sure global variables exist
+        window.transactions = [];
+        window.goals = [];
+        window.bills = [];
+        window.currentUser = null;
+
+        // Check auth state
+        // Check auth state
+        auth.onAuthStateChanged(async (user) => {
+            const mainApp = document.getElementById('mainApp');
+            const loader = document.getElementById('loader');
+
+            if (user) {
+                console.log('User logged in:', user.email);
+                window.currentUser = user;
+
+                // Update user info
+                const userNameSpan = document.getElementById('userName');
+                const userEmailSpan = document.getElementById('userEmail');
+                const userAvatar = document.getElementById('userAvatar');
+                if (userNameSpan) userNameSpan.innerText = user.displayName || user.email.split('@')[0];
+                if (userEmailSpan) userEmailSpan.innerText = user.email;
+                if (userAvatar) userAvatar.src = `https://ui-avatars.com/api/?background=6366f1&color=fff&bold=true&length=2&name=${encodeURIComponent(user.email || 'User')}`;
+
+                if (typeof loadUserAvatar === 'function') {
+                    loadUserAvatar();
+                }
+
+                if (mainApp) mainApp.style.display = 'block';
+                if (loader) loader.style.display = 'flex';
+
+                if (typeof initializeApp === 'function') {
+                    initializeApp();
+                }
+
+                if (typeof loadUserData === 'function') {
+                    await loadUserData();
+                }
+
+                // ✅ START REAL-TIME SYNC (ADD THIS)
+                if (typeof setupRealtimeSync === 'function') {
+                    setupRealtimeSync();
+                    console.log('✅ Real-time sync activated');
+                }
+
+                if (loader) loader.style.display = 'none';
+            } else {
+                // ✅ STOP REAL-TIME SYNC ON LOGOUT (ADD THIS)
+                if (typeof stopRealtimeSync === 'function') {
+                    stopRealtimeSync();
+                }
+                console.log('No user logged in, redirecting to login');
+                window.location.href = 'login.html';
+            }
+        });
+
+        // Expose functions globally
+        window.closeInstallBanner = closeInstallBanner;
+        window.handleLogout = handleLogout;
+
+
+        // ===== SIMPLE WORKING MOBILE MENU - ANDROID FIX =====
+        (function () {
+            const menuBtn = document.getElementById('mobileMenuToggle');
+            const navMenu = document.getElementById('navMenu');
+            const overlay = document.getElementById('menuOverlay');
+
+            if (menuBtn) {
+                menuBtn.onclick = function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('Menu button clicked');
+                    if (navMenu.classList.contains('open')) {
+                        navMenu.classList.remove('open');
+                        if (overlay) overlay.classList.remove('active');
+                        // Re-enable scrolling
+                        document.body.style.overflow = '';
+                        document.body.style.position = '';
+                        document.body.style.height = '';
+                    } else {
+                        navMenu.classList.add('open');
+                        if (overlay) overlay.classList.add('active');
+                        // IMPORTANT: DO NOT lock body scroll - keep page scrollable
+                        // No document.body.style.overflow = 'hidden' here!
+                    }
+                };
+            }
+
+            if (overlay) {
+                overlay.onclick = function () {
+                    navMenu.classList.remove('open');
+                    overlay.classList.remove('active');
+                    document.body.style.overflow = '';
+                    document.body.style.position = '';
+                    document.body.style.height = '';
+                };
+            }
+
+            // Close menu when clicking nav items
+            document.querySelectorAll('.nav-item').forEach(btn => {
+                btn.onclick = function (e) {
+                    const viewName = this.getAttribute('data-view');
+                    if (viewName && typeof window.switchView === 'function') {
+                        window.switchView(viewName);
+                    }
+                    navMenu.classList.remove('open');
+                    if (overlay) overlay.classList.remove('active');
+                    document.body.style.overflow = '';
+                    document.body.style.position = '';
+                    document.body.style.height = '';
+                };
+            });
+        })();
+
+    </script>
+
+</body>
+
+</html>

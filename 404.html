@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="description" content="Page not found — Kaleb Ez Tracker">
+    <meta name="theme-color" content="#6366f1">
+    <title>Page not found · Kaleb Ez Tracker</title>
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192x192.png">
+    <link rel="stylesheet" href="css/styles.css">
+    <style>
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: var(--gray-50, #f9fafb);
+            color: var(--gray-900, #111827);
+        }
+
+        [data-theme="dark"] body,
+        html[data-theme="dark"] body {
+            background: var(--gray-50, #0f0f1a);
+            color: var(--gray-900, #eaeafa);
+        }
+
+        .err-card {
+            max-width: 420px;
+            text-align: center;
+            padding: 2rem;
+            border-radius: 1rem;
+            border: 1px solid var(--gray-200, #e5e7eb);
+            background: var(--gray-100, #f3f4f6);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
+        }
+
+        .err-card h1 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .err-card p {
+            color: var(--gray-600, #4b5563);
+            margin-bottom: 1.5rem;
+            line-height: 1.5;
+        }
+
+        .err-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .err-actions a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px 20px;
+            border-radius: 0.75rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: transform 0.15s ease;
+        }
+
+        .err-actions a:hover {
+            transform: translateY(-1px);
+        }
+
+        .btn-home {
+            background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+            color: #fff;
+        }
+
+        .btn-login {
+            background: var(--gray-200, #e5e7eb);
+            color: var(--gray-900, #111827);
+        }
+    </style>
+</head>
+
+<body>
+    <script>document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') === 'dark' ? 'dark' : 'light');</script>
+    <div class="err-card">
+        <h1>Page not found</h1>
+        <p>This link doesn’t match anything on the site. Head back to the dashboard or sign in again.</p>
+        <div class="err-actions">
+            <a class="btn-home" href="/">Go to home</a>
+            <a class="btn-login" href="/login.html">Sign in</a>
+        </div>
+    </div>
+</body>
+
+</html>

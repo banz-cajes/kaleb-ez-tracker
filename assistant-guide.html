@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Assistant Setup - Kaleb Ez Tracker</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+            color: #ffffff;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .header h1 {
+            font-size: 2rem;
+            background: linear-gradient(135deg, #7C3AED, #A78BFA);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            margin-bottom: 10px;
+        }
+        
+        .card {
+            background: rgba(26, 26, 42, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 24px;
+            padding: 24px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(124, 58, 237, 0.3);
+        }
+        
+        .card h2 {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            color: #A78BFA;
+        }
+        
+        .step {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: rgba(15, 15, 26, 0.5);
+            border-radius: 16px;
+        }
+        
+        .step-number {
+            width: 32px;
+            height: 32px;
+            background: #7C3AED;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+        
+        .code-block {
+            background: #0f0f1a;
+            border-radius: 12px;
+            padding: 15px;
+            margin: 15px 0;
+            font-family: monospace;
+            font-size: 14px;
+            overflow-x: auto;
+            border: 1px solid #2a2a3a;
+        }
+        
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(124, 58, 237, 0.2);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            margin: 5px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #7C3AED, #A78BFA);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 12px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(124, 58, 237, 0.4);
+        }
+        
+        @media (max-width: 768px) {
+            .step {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-microphone"></i> Voice Assistant Setup</h1>
+            <p>Add transactions using Siri or Google Assistant</p>
+        </div>
+        
+        <!-- iOS Siri Shortcuts -->
+        <div class="card">
+            <h2><i class="fab fa-apple"></i> iOS - Siri Shortcuts</h2>
+            
+            <div class="step">
+                <div class="step-number">1</div>
+                <div>
+                    <strong>Open Shortcuts App</strong>
+                    <p>Open the Shortcuts app on your iPhone</p>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-number">2</div>
+                <div>
+                    <strong>Create New Shortcut</strong>
+                    <p>Tap + → Add Action → Web → Open URLs</p>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-number">3</div>
+                <div>
+                    <strong>Add URL Template</strong>
+                    <div class="code-block">
+                        https://kaleb-ez-tracker.netlify.app/?action=add&amount=500&category=Food&type=expense&note=Lunch
+                    </div>
+                    <p>Replace amount and category with Ask Each Time variables</p>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-number">4</div>
+                <div>
+                    <strong>Add Variables</strong>
+                    <p>Tap on "Ask Each Time" for amount and category</p>
+                    <div class="code-block">
+                        URL Template:<br>
+                        https://kaleb-ez-tracker.netlify.app/?action=add<br>
+                        &amount=Ask Each Time<br>
+                        &category=Ask Each Time<br>
+                        &type=expense<br>
+                        &note=Siri Added
+                    </div>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-number">5</div>
+                <div>
+                    <strong>Add to Siri</strong>
+                    <p>Tap Add to Siri → Record phrase like "Add expense to Kaleb Tracker"</p>
+                </div>
+            </div>
+            
+            <button onclick="copySiriShortcut()">
+                <i class="fas fa-copy"></i> Copy Siri Shortcut URL
+            </button>
+        </div>
+        
+        <!-- Android Google Assistant -->
+        <div class="card">
+            <h2><i class="fab fa-google"></i> Android - Google Assistant</h2>
+            
+            <div class="step">
+                <div class="step-number">1</div>
+                <div>
+                    <strong>Open Google Assistant Settings</strong>
+                    <p>Say "Hey Google, open Assistant settings"</p>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-number">2</div>
+                <div>
+                    <strong>Create Routine</strong>
+                    <p>Go to Routines → New Routine</p>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-number">3</div>
+                <div>
+                    <strong>Add Trigger Phrase</strong>
+                    <p>Example: "Add expense to Kaleb"</p>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-number">4</div>
+                <div>
+                    <strong>Add Action</strong>
+                    <p>Add "Open URL" action with this template:</p>
+                    <div class="code-block">
+                        https://kaleb-ez-tracker.netlify.app/?action=add&amount=$amount&category=$category&type=expense&note=Assistant
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Sample Commands -->
+        <div class="card">
+            <h2><i class="fas fa-comments"></i> Sample Voice Commands</h2>
+            
+            <div class="badge"><i class="fas fa-utensils"></i> "Add ₱500 for lunch"</div>
+            <div class="badge"><i class="fas fa-shopping-cart"></i> "Add ₱1,500 groceries"</div>
+            <div class="badge"><i class="fas fa-gas-pump"></i> "Add ₱2,000 for gas"</div>
+            <div class="badge"><i class="fas fa-briefcase"></i> "Add ₱50,000 salary"</div>
+            <div class="badge"><i class="fas fa-piggy-bank"></i> "Save ₱3,000 for emergency fund"</div>
+            <div class="badge"><i class="fas fa-chart-line"></i> "How much did I spend?"</div>
+            <div class="badge"><i class="fas fa-chart-simple"></i> "What's my balance?"</div>
+        </div>
+        
+        <!-- Direct Links -->
+        <div class="card">
+            <h2><i class="fas fa-link"></i> Direct Assistant Links</h2>
+            <p>Click these to test (will open app with pre-filled data):</p>
+            <div style="margin-top: 15px; display: flex; flex-wrap: wrap; gap: 10px;">
+                <a href="?action=add&amount=500&category=Food&type=expense&note=Lunch" class="badge" style="text-decoration: none;">
+                    Add ₱500 Food
+                </a>
+                <a href="?action=add&amount=2000&category=Gas&type=expense&note=Petron" class="badge" style="text-decoration: none;">
+                    Add ₱2,000 Gas
+                </a>
+                <a href="?action=add&amount=50000&category=Salary&type=income&note=Monthly" class="badge" style="text-decoration: none;">
+                    Add ₱50,000 Salary
+                </a>
+                <a href="?action=add&amount=1000&category=Savings&type=savings&note=Emergency" class="badge" style="text-decoration: none;">
+                    Add ₱1,000 Savings
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function copySiriShortcut() {
+            const url = "https://kaleb-ez-tracker.netlify.app/?action=add&amount=Ask%20Each%20Time&category=Ask%20Each%20Time&type=expense&note=Siri%20Added";
+            navigator.clipboard.writeText(url);
+            alert('✅ URL copied! You can now paste it in Shortcuts app.');
+        }
+    </script>
+</body>
+</html>
