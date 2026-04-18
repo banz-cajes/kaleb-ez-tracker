@@ -1,8 +1,0 @@
-name = "kaleb-ez-tracker"
-type = "static_assets"
-
-[env.production]
-routes = ["*"]
-
-[site]
-bucket = "."
