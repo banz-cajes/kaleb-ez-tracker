@@ -6068,3 +6068,17 @@ document.addEventListener('DOMContentLoaded', function () {
     setTimeout(initDailyTip, 500);
 });
 
+// Enable offline data persistence
+if (window.db && firebase.firestore) {
+    window.db.enablePersistence()
+        .then(() => {
+            console.log('Firestore persistence enabled - offline data available');
+        })
+        .catch((err) => {
+            if (err.code === 'failed-precondition') {
+                console.log('Persistence failed: Multiple tabs open');
+            } else if (err.code === 'unimplemented') {
+                console.log('Persistence not supported by browser');
+            }
+        });
+}
