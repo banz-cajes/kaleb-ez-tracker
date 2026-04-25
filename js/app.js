@@ -1,3 +1,8 @@
+// Global variables
+window.transactions = [];
+window.filteredTransactionIds = [];
+window.editIndex = -1;
+
 // Initialize sileo if not already present
 if (typeof window.sileo === 'undefined') {
     window.sileo = {
@@ -231,6 +236,8 @@ async function loadUserData() {
             window.debtGoal = 0;
             window.savingsGoal = 0;
         }
+
+        await migrateOldTransactions();
 
         // Save to cache
         localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
@@ -534,9 +541,12 @@ function render() {
     const transactions = window.transactions || [];
     const sortedTransactions = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    console.log('Rendering transactions:', transactions.length); // Debug log
+    console.log('Rendering transactions:', transactions.length);
 
-    sortedTransactions.forEach((t, idx) => {
+    // Clear the filtered indices array
+    window.filteredTransactionIds = [];
+
+    sortedTransactions.forEach((t) => {
         const amount = t.amount || 0;
         if (t.type === 'income') totalIncome += amount;
         else if (t.type === 'expense') {
@@ -569,7 +579,10 @@ function render() {
         const matchesType = typeFilter === 'all' || t.type === typeFilter;
 
         if (matchesSearch && matchesMonth && matchesType) {
-            tbody.innerHTML += `<tr onclick="openEditModal(${idx})" style="cursor: pointer;">
+            // Store the transaction ID for edit/delete
+            window.filteredTransactionIds.push(t.id);
+
+            tbody.innerHTML += `<tr onclick="openEditModalById('${t.id}')" style="cursor: pointer;">
                 <td class="category-cell">
                     <span style="font-weight:600;">${t.category || '-'}</span>
                     ${t.note ? `<span class="note">${escapeHtml(t.note)}</span>` : ''}
@@ -580,10 +593,10 @@ function render() {
                 <td>${formatDate(t.date)}</td>
                 <td style="text-align: center;">
                     <div class="action-cell">
-                        <button class="action-btn" onclick="event.stopPropagation(); openEditModal(${idx})">
+                        <button class="action-btn" onclick="event.stopPropagation(); openEditModalById('${t.id}')">
                             <i class="fas fa-edit"></i>
                         </button>
-                        <button class="action-btn delete" onclick="event.stopPropagation(); deleteTransaction(${idx})">
+                        <button class="action-btn delete" onclick="event.stopPropagation(); deleteTransactionById('${t.id}')">
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>
@@ -592,16 +605,12 @@ function render() {
         }
     });
 
-    // Inside render() function, after calculating monthIncome and monthExpense
-    // Add this code:
-
     // Calculate totals for the current filtered view
     let filteredTotalIncome = 0;
     let filteredTotalExpense = 0;
     let filteredTotalSavings = 0;
 
-    // Loop through filtered transactions to get totals for current view
-    sortedTransactions.forEach((t, idx) => {
+    sortedTransactions.forEach((t) => {
         const amount = t.amount || 0;
         const searchTerm = search.toLowerCase();
         const categoryMatch = t.category?.toLowerCase().includes(searchTerm);
@@ -622,7 +631,6 @@ function render() {
     // Create or update summary bar
     let summaryBar = document.getElementById('transactionsSummary');
     if (!summaryBar) {
-        // Create summary bar if it doesn't exist
         summaryBar = document.createElement('div');
         summaryBar.id = 'transactionsSummary';
         summaryBar.className = 'transactions-summary';
@@ -632,7 +640,6 @@ function render() {
         }
     }
 
-    // Update summary bar HTML
     summaryBar.innerHTML = `
     <div class="summary-cards">
         <div class="summary-card income">
@@ -650,15 +657,15 @@ function render() {
             </div>
         </div>
         <div class="summary-card net">
-    <div class="summary-icon"><i class="fas fa-chart-line"></i></div>
-    <div class="summary-info">
-        <span class="summary-label">Net Balance</span>
-        <span class="summary-value" style="color: #8b5cf6;">${formatCurrency(filteredNet)}</span>
-        <span class="summary-trend" style="font-size: 11px; color: ${filteredNet >= 0 ? '#10b981' : '#ef4444'};">
-            ${filteredNet >= 0 ? '▲ Surplus' : '▼ Deficit'}
-        </span>
-    </div>
-</div>
+            <div class="summary-icon"><i class="fas fa-chart-line"></i></div>
+            <div class="summary-info">
+                <span class="summary-label">Net Balance</span>
+                <span class="summary-value" style="color: #8b5cf6;">${formatCurrency(filteredNet)}</span>
+                <span class="summary-trend" style="font-size: 11px; color: ${filteredNet >= 0 ? '#10b981' : '#ef4444'};">
+                    ${filteredNet >= 0 ? '▲ Surplus' : '▼ Deficit'}
+                </span>
+            </div>
+        </div>
     </div>
 `;
 
@@ -690,10 +697,10 @@ function render() {
     // Debt Progress Bar
     if (document.getElementById('debtBar') && document.getElementById('debtRemainingVal')) {
         if (window.debtGoal > 0) {
-            const debtPaid = calculateDebtPaid(); // You need this function
-            const percentage = Math.min((debtPaid / window.debtGoal) * 100, 100);
+            const debtPaidCalc = calculateDebtPaid();
+            const percentage = Math.min((debtPaidCalc / window.debtGoal) * 100, 100);
             document.getElementById('debtBar').style.width = percentage + '%';
-            document.getElementById('debtRemainingVal').innerHTML = `${formatCurrency(Math.max(window.debtGoal - debtPaid, 0))} Left`;
+            document.getElementById('debtRemainingVal').innerHTML = `${formatCurrency(Math.max(window.debtGoal - debtPaidCalc, 0))} Left`;
         } else {
             document.getElementById('debtBar').style.width = '0%';
             document.getElementById('debtRemainingVal').innerHTML = `No Debt Goal Set`;
@@ -703,10 +710,10 @@ function render() {
     // Savings Progress Bar
     if (document.getElementById('savingsBar') && document.getElementById('savingsVal')) {
         if (window.savingsGoal > 0) {
-            const totalSavings = calculateTotalSavings(); // You need this function
-            const percentage = Math.min((totalSavings / window.savingsGoal) * 100, 100);
+            const totalSavingsCalc = calculateTotalSavings();
+            const percentage = Math.min((totalSavingsCalc / window.savingsGoal) * 100, 100);
             document.getElementById('savingsBar').style.width = percentage + '%';
-            document.getElementById('savingsVal').innerHTML = `${formatCurrency(totalSavings)} Saved`;
+            document.getElementById('savingsVal').innerHTML = `${formatCurrency(totalSavingsCalc)} Saved`;
         } else {
             document.getElementById('savingsBar').style.width = '0%';
             document.getElementById('savingsVal').innerHTML = `No Savings Goal Set`;
@@ -719,6 +726,218 @@ function render() {
     renderGoals();
     renderBills();
 }
+
+// ===== MISSING FUNCTIONS - ADD THIS BLOCK =====
+
+// Delete transaction by ID
+function deleteTransactionById(txId) {
+    console.log('🗑️ deleteTransactionById called for ID:', txId);
+    if (!txId) return;
+
+    if (confirm('Delete this transaction?')) {
+        const index = window.transactions.findIndex(t => t.id === txId);
+        if (index !== -1) {
+            window.transactions.splice(index, 1);
+            saveToFirebase();
+            render();
+            if (window.sileo) window.sileo.success('Transaction deleted!', 'Deleted');
+        }
+    }
+}
+
+// Delete current transaction (for modal)
+function deleteCurrentTransaction() {
+    console.log('🗑️ deleteCurrentTransaction called');
+    const modal = document.getElementById('modal');
+    const editingId = modal?.getAttribute('data-editing-id');
+
+    if (!editingId) return;
+
+    const index = window.transactions.findIndex(t => t.id === editingId);
+
+    if (index !== -1 && confirm('Are you sure you want to delete this transaction?')) {
+        window.transactions.splice(index, 1);
+        saveToFirebase();
+        closeModal();
+        render();
+        if (window.sileo) window.sileo.success('Transaction deleted successfully!', 'Deleted');
+        window.editIndex = -1;
+    }
+}
+
+// Handle logout function
+function handleLogout() {
+    console.log('🔓 Logout function called');
+    if (confirm('Are you sure you want to logout?')) {
+        if (firebase && firebase.auth()) {
+            firebase.auth().signOut().then(() => {
+                // Clear local data
+                if (window.currentUser) {
+                    localStorage.removeItem('cajesData_' + window.currentUser.uid);
+                }
+                // Redirect to login
+                window.location.href = 'login.html';
+            }).catch(error => {
+                console.error('Logout error:', error);
+                if (window.sileo) {
+                    window.sileo.error('Failed to logout. Please try again.', 'Error');
+                }
+            });
+        } else {
+            // Fallback redirect
+            window.location.href = 'login.html';
+        }
+    }
+}
+
+// Make sure logout button works
+function initLogoutButton() {
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) {
+        logoutBtn.onclick = function (e) {
+            e.stopPropagation();
+            handleLogout();
+        };
+    }
+
+    const logoutNavBtn = document.getElementById('logoutNavBtn');
+    if (logoutNavBtn) {
+        logoutNavBtn.onclick = function (e) {
+            e.stopPropagation();
+            handleLogout();
+        };
+    }
+}
+
+// Call this when DOM is ready
+document.addEventListener('DOMContentLoaded', function () {
+    initLogoutButton();
+});
+
+// ===== END OF MISSING FUNCTIONS =====
+
+// ===== MIGRATION FUNCTION (ADD AFTER deleteCurrentTransaction function) =====
+
+// Call this after loading data to migrate old transactions
+async function migrateOldTransactions() {
+    let needsSave = false;
+
+    if (!window.transactions || window.transactions.length === 0) {
+        return;
+    }
+
+    window.transactions = window.transactions.map(t => {
+        if (!t.id) {
+            needsSave = true;
+            return {
+                ...t,
+                id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9)
+            };
+        }
+        return t;
+    });
+
+    if (needsSave) {
+        console.log('🔄 Migrating old transactions with unique IDs...');
+        await saveToFirebase();
+        console.log('✅ Migration complete!');
+    }
+}
+
+// ===== END OF MIGRATION FUNCTION =====
+
+function openEditModalById(txId) {
+    console.log('✏️ Opening edit modal for ID:', txId);
+    if (!txId) {
+        if (window.sileo) window.sileo.error('Invalid transaction', 'Error');
+        return;
+    }
+
+    // Find transaction by ID
+    const index = window.transactions.findIndex(t => t.id === txId);
+
+    if (index === -1) {
+        console.error('Transaction not found with ID:', txId);
+        if (window.sileo) window.sileo.error('Transaction not found', 'Error');
+        return;
+    }
+
+    console.log('Found transaction at index:', index);
+    window.editIndex = index;
+    const t = window.transactions[index];
+
+    const modal = document.getElementById('modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        document.body.classList.add('modal-open');
+
+        document.getElementById('mType').value = t.type;
+
+        const cats = t.type === 'expense' ? expenseCats : t.type === 'income' ? incomeCats : savingsCats;
+        document.getElementById('mCategory').innerHTML = cats.map(c => `<option value="${c}" ${c === t.category ? 'selected' : ''}>${c}</option>`).join('');
+
+        document.getElementById('mAmount').value = t.amount.toFixed(2);
+        document.getElementById('mDate').value = t.date;
+        document.getElementById('mNote').value = t.note || '';
+
+        // Store the editing ID
+        modal.setAttribute('data-editing-id', txId);
+        console.log('Set editing ID on modal:', txId);
+    }
+}
+
+// REPLACE your existing saveEdit function with this
+function saveEdit() {
+    console.log('🔧 saveEdit called - checking for editing ID');
+    const modal = document.getElementById('modal');
+    const editingId = modal?.getAttribute('data-editing-id');
+
+    if (!editingId) {
+        console.error('No editing ID found');
+        if (window.sileo) window.sileo.error('No transaction selected', 'Error');
+        return;
+    }
+
+    console.log('Editing transaction ID:', editingId);
+
+    const index = window.transactions.findIndex(t => t.id === editingId);
+    if (index === -1) {
+        console.error('Transaction not found with ID:', editingId);
+        if (window.sileo) window.sileo.error('Transaction not found', 'Error');
+        closeModal();
+        return;
+    }
+
+    const amount = parseAmount(document.getElementById('mAmount').value);
+    if (amount <= 0) {
+        if (window.sileo) window.sileo.error('Please enter a valid amount', 'Error');
+        return;
+    }
+
+    const updatedTransaction = {
+        ...window.transactions[index],
+        type: document.getElementById('mType').value,
+        category: document.getElementById('mCategory').value,
+        amount: amount,
+        date: document.getElementById('mDate').value,
+        note: document.getElementById('mNote').value,
+        updatedAt: new Date().toISOString()
+    };
+
+    console.log('Updating transaction:', updatedTransaction);
+    window.transactions[index] = updatedTransaction;
+
+    closeModal();
+    saveToFirebase();
+
+    // Force render immediately
+    if (typeof render === 'function') {
+        render();
+    }
+
+    if (window.sileo) window.sileo.success('Transaction updated!', 'Success');
+}
+// ===== END OF EDIT FUNCTIONS =====
 
 function calculateDebtPaid() {
     return (window.transactions || [])
@@ -1211,7 +1430,9 @@ function saveNewTransaction() {
         return;
     }
 
+    // Generate unique ID for the transaction
     const transaction = {
+        id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9),
         type,
         category,
         amount,
@@ -1232,15 +1453,9 @@ function saveNewTransaction() {
     // Close modal
     closeAddTransactionModal();
 
-    // FORCE RENDER - This is the key fix
+    // FORCE RENDER
     if (typeof render === 'function') {
         render();
-    } else {
-        console.error('render function not found!');
-    }
-
-    // Also update charts
-    if (typeof updateCharts === 'function') {
     }
 
     // Show success message
@@ -1264,61 +1479,16 @@ function checkActiveView() {
     });
 }
 
-// Call this after adding transaction
-checkActiveView();
-
-function openEditModal(index) {
-    editIndex = index;
-    const t = window.transactions[index];
-    const modal = document.getElementById('modal');
-    if (modal) {
-        modal.style.display = 'flex';
-        document.body.classList.add('modal-open');
-        document.getElementById('mType').value = t.type;
-        const cats = t.type === 'expense' ? expenseCats : t.type === 'income' ? incomeCats : savingsCats;
-        document.getElementById('mCategory').innerHTML = cats.map(c => `<option value="${c}" ${c === t.category ? 'selected' : ''}>${c}</option>`).join('');
-        document.getElementById('mAmount').value = t.amount.toFixed(2);
-        document.getElementById('mDate').value = t.date;
-        document.getElementById('mNote').value = t.note || '';
-    }
-}
 
 function closeModal() {
     const modal = document.getElementById('modal');
-    if (modal) { modal.style.display = 'none'; document.body.classList.remove('modal-open'); }
-}
-
-function saveEdit() {
-    const amount = parseAmount(document.getElementById('mAmount').value);
-    if (amount <= 0) { if (window.sileo) window.sileo.error('Please enter a valid amount', 'Error'); return; }
-    window.transactions[editIndex] = {
-        type: document.getElementById('mType').value,
-        category: document.getElementById('mCategory').value,
-        amount: amount,
-        date: document.getElementById('mDate').value,
-        note: document.getElementById('mNote').value
-    };
-    closeModal();
-    saveToFirebase();
-    if (window.sileo) window.sileo.success('Transaction updated!', 'Success');
-}
-
-function deleteTransaction(index) {
-    if (confirm('Delete this transaction?')) {
-        window.transactions.splice(index, 1);
-        saveToFirebase();
-        if (window.sileo) window.sileo.success('Transaction deleted!', 'Deleted');
+    if (modal) {
+        modal.style.display = 'none';
+        document.body.classList.remove('modal-open');
+        // Clear the editing ID when closing
+        modal.removeAttribute('data-editing-id');
     }
-}
-
-function deleteCurrentTransaction() {
-    if (editIndex !== -1 && confirm('Are you sure you want to delete this transaction?')) {
-        window.transactions.splice(editIndex, 1);
-        saveToFirebase();
-        closeModal();
-        if (window.sileo) window.sileo.success('Transaction deleted successfully!', 'Deleted');
-        editIndex = -1;
-    }
+    editIndex = -1;
 }
 
 // Helper function to update dashboard stats without full refresh
@@ -1809,6 +1979,8 @@ function importData() {
 function clearAllData() {
     if (confirm('Delete ALL data? This action cannot be undone!')) {
         window.transactions = [];
+        window.filteredTransactionIds = [];  // ← ADD THIS LINE
+        window.editIndex = -1;
         window.goals = [];
         window.bills = [];
         window.budgetLimit = 0;
@@ -2148,10 +2320,10 @@ window.showAddTransactionModal = showAddTransactionModal;
 window.closeAddTransactionModal = closeAddTransactionModal;
 window.setTransactionType = setTransactionType;
 window.saveNewTransaction = saveNewTransaction;
-window.openEditModal = openEditModal;
+window.openEditModalById = openEditModalById;
 window.closeModal = closeModal;
 window.saveEdit = saveEdit;
-window.deleteTransaction = deleteTransaction;
+window.deleteTransactionById = deleteTransactionById;
 window.deleteCurrentTransaction = deleteCurrentTransaction;
 window.quickAdd = quickAdd;
 window.showGoalModal = showGoalModal;
