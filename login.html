@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" href="icons/icon-192x192.png">
     <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192x192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512x512.png">
-    
+
     <!-- Config -->
     <script src="js/config.js"></script>
     <script src="js/notifications.js"></script>
@@ -145,15 +145,20 @@
         }
 
         @keyframes floatBubble {
-            0%, 100% {
+
+            0%,
+            100% {
                 transform: translateY(0) translateX(0) scale(1);
             }
+
             25% {
                 transform: translateY(-40px) translateX(25px) scale(1.05);
             }
+
             50% {
                 transform: translateY(30px) translateX(-20px) scale(0.98);
             }
+
             75% {
                 transform: translateY(-20px) translateX(15px) scale(1.02);
             }
@@ -177,6 +182,7 @@
                 opacity: 0;
                 transform: translateY(30px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -243,6 +249,7 @@
             from {
                 opacity: 0;
             }
+
             to {
                 opacity: 1;
             }
@@ -346,28 +353,6 @@
             display: block;
         }
 
-        .features {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 16px;
-            margin-top: 32px;
-            padding-top: 24px;
-            border-top: 1px solid #e5e7eb;
-        }
-
-        .feature {
-            text-align: center;
-            font-size: 12px;
-            color: #6b7280;
-        }
-
-        .feature i {
-            font-size: 20px;
-            color: #6366f1;
-            margin-bottom: 6px;
-            display: block;
-        }
-
         @media (max-width: 480px) {
             .login-container {
                 padding: 32px 24px;
@@ -391,7 +376,7 @@
             .bubble-8 {
                 opacity: 0.1;
             }
-            
+
         }
     </style>
 </head>
@@ -408,7 +393,7 @@
         <div class="bubble bubble-7"></div>
         <div class="bubble bubble-8"></div>
     </div>
-    
+
     <div class="login-container">
         <div class="logo">
             <h1>Kaleb Ez Tracker</h1>
@@ -481,13 +466,6 @@
             <div id="signupError" class="error-message"></div>
 
             <button class="btn" onclick="handleSignup()">Create Account →</button>
-        </div>
-
-        <div class="features">
-            <div class="feature"><i class="fas fa-chart-line"></i> Track spending</div>
-            <div class="feature"><i class="fas fa-bullseye"></i> Set goals</div>
-            <div class="feature"><i class="fas fa-shield-alt"></i> Secure data</div>
-            <div class="feature"><i class="fas fa-chart-bar"></i> Smart analytics</div>
         </div>
     </div>
 
