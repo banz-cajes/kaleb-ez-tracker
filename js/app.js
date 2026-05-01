@@ -1,3 +1,121 @@
+
+// Add at top of your app.js
+let currentPage = 1;
+const ITEMS_PER_PAGE = 50;
+
+// Modify your render function - wrap the table rendering
+function renderTransactionsPaginated() {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    const end = start + ITEMS_PER_PAGE;
+    const paginatedTransactions = filteredTransactions.slice(start, end);
+    // ... render only paginatedTransactions
+}
+
+
+// OFFLINE-FIRST ADDON - Add this to your existing app.js
+
+const OfflineManager = {
+    persistLocally() {
+        try {
+            localStorage.setItem('kaleb_offline_backup', JSON.stringify({
+                transactions: window.transactions || [],
+                budgetLimit: window.budgetLimit || 0,
+                debtGoal: window.debtGoal || 0,
+                savingsGoal: window.savingsGoal || 0,
+                goals: window.goals || [],
+                bills: window.bills || [],
+                currency: window.currentCurrency || 'PHP',
+                lastBackup: new Date().toISOString()
+            }));
+            return true;
+        } catch (e) { return false; }
+    },
+    restoreFromLocal() {
+        try {
+            const saved = localStorage.getItem('kaleb_offline_backup');
+            if (!saved) return false;
+            const data = JSON.parse(saved);
+            if (data.transactions) window.transactions = data.transactions;
+            if (data.budgetLimit !== undefined) window.budgetLimit = data.budgetLimit;
+            if (data.debtGoal !== undefined) window.debtGoal = data.debtGoal;
+            if (data.savingsGoal !== undefined) window.savingsGoal = data.savingsGoal;
+            if (data.goals) window.goals = data.goals;
+            if (data.bills) window.bills = data.bills;
+            if (data.currency) window.currentCurrency = data.currency;
+            return true;
+        } catch (e) { return false; }
+    }
+};
+
+// Override saveToFirebase to always save locally first
+const _originalSaveToFirebase = window.saveToFirebase;
+window.saveToFirebase = async function () {
+    OfflineManager.persistLocally();
+
+    if (!window.currentUser) {
+        if (typeof render === 'function') render();
+        return true;
+    }
+
+    if (!navigator.onLine) {
+        if (window.sileo) window.sileo.warning('Offline - saved locally', 'Offline');
+        if (typeof render === 'function') render();
+        return true;
+    }
+
+    if (_originalSaveToFirebase) {
+        return await _originalSaveToFirebase();
+    }
+    return false;
+};
+
+// Override loadUserData to try local backup if Firebase fails
+const _originalLoadUserData = window.loadUserData;
+window.loadUserData = async function () {
+    try {
+        if (_originalLoadUserData) {
+            await _originalLoadUserData();
+        }
+    } catch (error) {
+        console.log('Firebase failed, using local backup');
+        OfflineManager.restoreFromLocal();
+        if (typeof render === 'function') render();
+        if (window.sileo) window.sileo.warning('Using offline data', 'Offline Mode');
+    }
+};
+
+// Add offline status indicator
+function initOfflineStatus() {
+    if (document.getElementById('offlineStatusIndicator')) return;
+    const indicator = document.createElement('div');
+    indicator.id = 'offlineStatusIndicator';
+    indicator.style.cssText = `position:fixed; bottom:80px; left:20px; background:#f59e0b; color:white; padding:6px 12px; border-radius:40px; font-size:11px; font-weight:600; z-index:1000; display:none; align-items:center; gap:6px;`;
+    indicator.innerHTML = '<i class="fas fa-wifi"></i> Offline Mode';
+    document.body.appendChild(indicator);
+
+    function update() {
+        if (!navigator.onLine) {
+            indicator.style.display = 'flex';
+            indicator.style.background = '#ef4444';
+            indicator.innerHTML = '<i class="fas fa-ban"></i> Offline • Local Only';
+        } else {
+            indicator.style.display = 'none';
+        }
+    }
+    window.addEventListener('online', () => { update(); if (window.sileo) window.sileo.success('Back online!', 'Connected'); });
+    window.addEventListener('offline', () => { update(); if (window.sileo) window.sileo.warning('Offline mode active', 'Offline'); });
+    update();
+}
+
+// Call this inside your existing DOMContentLoaded
+if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', function () {
+        initOfflineStatus();
+        // Also backup data every 30 seconds
+        setInterval(() => { if (window.transactions) OfflineManager.persistLocally(); }, 30000);
+    });
+}
+
 // Global variables
 window.transactions = [];
 window.filteredTransactionIds = [];
@@ -6253,4 +6371,25 @@ if (window.db && firebase.firestore) {
                 console.log('Persistence not supported by browser');
             }
         });
+}
+
+// Run this in browser console to see your data size
+console.log('Transactions:', window.transactions.length);
+console.log('Storage size:', JSON.stringify(window.transactions).length / 1024, 'KB');
+
+// Archive old data (older than 1 year)
+function archiveOldTransactions() {
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const oneYearAgoStr = oneYearAgo.toISOString().split('T')[0];
+
+    const oldTransactions = window.transactions.filter(t => t.date < oneYearAgoStr);
+    const recentTransactions = window.transactions.filter(t => t.date >= oneYearAgoStr);
+
+    // Save old to separate storage
+    localStorage.setItem('archived_transactions', JSON.stringify(oldTransactions));
+    window.transactions = recentTransactions;
+    window.saveToFirebase();
+
+    console.log(`Archived ${oldTransactions.length} old transactions`);
 }
