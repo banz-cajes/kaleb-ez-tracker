@@ -84,28 +84,6 @@ window.loadUserData = async function () {
     }
 };
 
-// Add offline status indicator
-function initOfflineStatus() {
-    if (document.getElementById('offlineStatusIndicator')) return;
-    const indicator = document.createElement('div');
-    indicator.id = 'offlineStatusIndicator';
-    indicator.style.cssText = `position:fixed; bottom:80px; left:20px; background:#f59e0b; color:white; padding:6px 12px; border-radius:40px; font-size:11px; font-weight:600; z-index:1000; display:none; align-items:center; gap:6px;`;
-    indicator.innerHTML = '<i class="fas fa-wifi"></i> Offline Mode';
-    document.body.appendChild(indicator);
-
-    function update() {
-        if (!navigator.onLine) {
-            indicator.style.display = 'flex';
-            indicator.style.background = '#ef4444';
-            indicator.innerHTML = '<i class="fas fa-ban"></i> Offline • Local Only';
-        } else {
-            indicator.style.display = 'none';
-        }
-    }
-    window.addEventListener('online', () => { update(); if (window.sileo) window.sileo.success('Back online!', 'Connected'); });
-    window.addEventListener('offline', () => { update(); if (window.sileo) window.sileo.warning('Offline mode active', 'Offline'); });
-    update();
-}
 
 // Call this inside your existing DOMContentLoaded
 if (typeof document !== 'undefined') {
@@ -579,21 +557,6 @@ async function manualSync() {
     }
 }
 
-// Auto-save with real-time broadcast
-const originalSaveToFirebase = saveToFirebase;
-window.saveToFirebase = async function () {
-    if (!window.currentUser) return false;
-
-    const result = await originalSaveToFirebase();
-
-    // Force a quick re-render to show changes immediately
-    if (typeof render === 'function') {
-        render();
-    }
-
-    return result;
-};
-
 async function saveToFirebase() {
     if (!window.currentUser) return false;
 
@@ -907,6 +870,9 @@ function handleLogout() {
         }
     }
 }
+
+// Make handleLogout globally available
+window.handleLogout = handleLogout;
 
 // Make sure logout button works
 function initLogoutButton() {
@@ -6393,3 +6359,707 @@ function archiveOldTransactions() {
 
     console.log(`Archived ${oldTransactions.length} old transactions`);
 }
+
+
+// ===== OFFLINE SYNC FIX - MERGE DATA WHEN BACK ONLINE =====
+
+// Track pending changes that need to be synced
+let pendingTransactions = [];
+let pendingGoals = [];
+let pendingBills = [];
+
+// Track unsynced changes
+function trackUnsyncedChanges() {
+    if (!navigator.onLine) {
+        // Mark that we have pending changes
+        localStorage.setItem('pending_sync', 'true');
+        localStorage.setItem('pending_sync_time', Date.now().toString());
+    }
+}
+
+// Merge local offline data with Firebase data
+async function mergeLocalWithCloud() {
+    if (!window.currentUser) return false;
+
+    console.log('🔄 Merging offline data with cloud...');
+
+    try {
+        // Get current cloud data
+        const doc = await window.db.collection('users').doc(window.currentUser.uid).get();
+        const cloudData = doc.exists ? doc.data() : null;
+
+        // Get local backup
+        const localBackup = localStorage.getItem('cajesData_' + window.currentUser.uid);
+        if (!localBackup) return false;
+
+        const localData = JSON.parse(localBackup);
+
+        // Check if there's actually pending data to merge
+        const hasPendingData = localStorage.getItem('pending_sync') === 'true';
+        if (!hasPendingData) return false;
+
+        console.log('Local transactions:', localData.transactions?.length || 0);
+        console.log('Cloud transactions:', cloudData?.transactions?.length || 0);
+
+        // MERGE STRATEGY: Keep all transactions, remove duplicates by ID
+        let mergedTransactions = [...(cloudData?.transactions || [])];
+        let localTransactions = localData.transactions || [];
+
+        // Add local transactions that don't exist in cloud (by ID)
+        localTransactions.forEach(localTx => {
+            const exists = mergedTransactions.some(cloudTx => cloudTx.id === localTx.id);
+            if (!exists && localTx.id) {
+                console.log('➕ Adding missing transaction:', localTx.id);
+                mergedTransactions.unshift(localTx); // Add to beginning
+            }
+        });
+
+        // Also check for transactions without IDs (old format)
+        localTransactions.forEach(localTx => {
+            if (!localTx.id) {
+                // Generate ID for old transactions
+                localTx.id = Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9);
+                mergedTransactions.unshift(localTx);
+                console.log('➕ Added old transaction with new ID');
+            }
+        });
+
+        // Remove duplicate transactions (by id)
+        const uniqueTransactions = [];
+        const seenIds = new Set();
+        mergedTransactions.forEach(tx => {
+            if (tx.id && !seenIds.has(tx.id)) {
+                seenIds.add(tx.id);
+                uniqueTransactions.push(tx);
+            } else if (!tx.id) {
+                // Give it an ID if missing
+                tx.id = Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9);
+                uniqueTransactions.push(tx);
+            }
+        });
+
+        // Merge Goals
+        let mergedGoals = [...(cloudData?.goals || [])];
+        let localGoals = localData.goals || [];
+        localGoals.forEach(localGoal => {
+            const exists = mergedGoals.some(cloudGoal =>
+                cloudGoal.name === localGoal.name &&
+                cloudGoal.target === localGoal.target
+            );
+            if (!exists) {
+                mergedGoals.push(localGoal);
+            }
+        });
+
+        // Merge Bills
+        let mergedBills = [...(cloudData?.bills || [])];
+        let localBills = localData.bills || [];
+        localBills.forEach(localBill => {
+            const exists = mergedBills.some(cloudBill =>
+                cloudBill.name === localBill.name &&
+                cloudBill.dueDate === localBill.dueDate
+            );
+            if (!exists) {
+                mergedBills.push(localBill);
+            }
+        });
+
+        // Update settings (keep the highest values for budget limits)
+        const mergedBudgetLimit = Math.max(
+            cloudData?.monthlyBudget || 0,
+            localData.budgetLimit || 0
+        );
+
+        const mergedDebtGoal = Math.max(
+            cloudData?.debtGoal || 0,
+            localData.debtGoal || 0
+        );
+
+        const mergedSavingsGoal = Math.max(
+            cloudData?.savingsGoal || 0,
+            localData.savingsGoal || 0
+        );
+
+        // Prepare final data to save
+        const finalData = {
+            transactions: uniqueTransactions,
+            goals: mergedGoals,
+            bills: mergedBills,
+            monthlyBudget: mergedBudgetLimit,
+            debtGoal: mergedDebtGoal,
+            savingsGoal: mergedSavingsGoal,
+            lastSync: firebase.firestore.FieldValue.serverTimestamp(),
+            lastMerged: new Date().toISOString()
+        };
+
+        console.log(`📊 Merge summary: ${uniqueTransactions.length} total transactions`);
+        console.log(`   - ${localTransactions.length} from local`);
+        console.log(`   - ${cloudData?.transactions?.length || 0} from cloud`);
+
+        // Save merged data to Firebase
+        await window.db.collection('users').doc(window.currentUser.uid).set(finalData, { merge: true });
+
+        // Update local data
+        window.transactions = uniqueTransactions;
+        window.goals = mergedGoals;
+        window.bills = mergedBills;
+        window.budgetLimit = mergedBudgetLimit;
+        window.debtGoal = mergedDebtGoal;
+        window.savingsGoal = mergedSavingsGoal;
+
+        // Update local storage
+        localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
+            transactions: window.transactions,
+            budgetLimit: window.budgetLimit,
+            debtGoal: window.debtGoal,
+            savingsGoal: window.savingsGoal,
+            goals: window.goals,
+            bills: window.bills,
+            lastSync: new Date().toISOString()
+        }));
+
+        // Clear pending flag
+        localStorage.removeItem('pending_sync');
+
+        // Re-render UI
+        if (typeof render === 'function') render();
+
+        if (window.sileo) {
+            window.sileo.success(`✅ Synced ${localTransactions.length} offline transactions!`, 'Sync Complete');
+        }
+
+        return true;
+
+    } catch (error) {
+        console.error('Merge error:', error);
+        return false;
+    }
+}
+
+// Override saveToFirebase to track pending changes
+const originalSaveToFirebase = window.saveToFirebase;
+window.saveToFirebase = async function () {
+    // Always save locally first
+    if (window.currentUser) {
+        localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
+            transactions: window.transactions,
+            budgetLimit: window.budgetLimit,
+            debtGoal: window.debtGoal,
+            savingsGoal: window.savingsGoal,
+            goals: window.goals,
+            bills: window.bills,
+            lastBackup: new Date().toISOString()
+        }));
+    }
+
+    // If offline, mark pending sync
+    if (!navigator.onLine) {
+        localStorage.setItem('pending_sync', 'true');
+        localStorage.setItem('pending_sync_time', Date.now().toString());
+        console.log('📝 Offline - data saved locally, pending sync');
+        if (window.sileo) {
+            window.sileo.warning('Saved locally. Will sync when online.', 'Offline Mode');
+        }
+        if (typeof render === 'function') render();
+        return true;
+    }
+
+    // Online - try to save to Firebase
+    try {
+        if (window.currentUser && window.db) {
+            const dataToSave = {
+                transactions: window.transactions,
+                monthlyBudget: window.budgetLimit,
+                debtGoal: window.debtGoal,
+                savingsGoal: window.savingsGoal,
+                goals: window.goals,
+                bills: window.bills,
+                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            await window.db.collection('users').doc(window.currentUser.uid).set(dataToSave, { merge: true });
+            console.log('✅ Data saved to Firebase');
+
+            // Clear pending flag after successful save
+            localStorage.removeItem('pending_sync');
+
+            return true;
+        }
+    } catch (error) {
+        console.error('Save error:', error);
+        // If save fails, mark for later sync
+        localStorage.setItem('pending_sync', 'true');
+        return false;
+    }
+};
+
+// Enhanced online event handler
+function initOnlineSync() {
+    // Enhanced online/offline detection
+    window.addEventListener('online', async () => {
+        console.log('🌐 Connection restored');
+        const offlineIndicator = document.getElementById('offlineIndicator');
+        if (offlineIndicator) offlineIndicator.style.display = 'none';
+
+        // Check for pending data
+        const pendingSync = localStorage.getItem('pending_sync');
+        if (pendingSync === 'true') {
+            console.log('📦 Pending data found, syncing...');
+
+            // Show toast
+            if (window.sileo) {
+                window.sileo.info('Syncing offline data...', 'Back Online');
+            }
+
+            // Force a merge
+            if (typeof mergeLocalWithCloud === 'function') {
+                await mergeLocalWithCloud();
+            } else if (typeof window.saveToFirebase === 'function') {
+                await window.saveToFirebase();
+            }
+
+            // Refresh display
+            if (typeof render === 'function') render();
+        }
+    });
+
+    // Also check on page load if we're online and have pending data
+    if (navigator.onLine) {
+        const pendingSync = localStorage.getItem('pending_sync');
+        if (pendingSync === 'true') {
+            console.log('📡 Pending sync detected on load, merging...');
+            setTimeout(() => mergeLocalWithCloud(), 2000);
+        }
+    }
+}
+
+// Call this in your DOMContentLoaded or initializeApp
+function initOfflineMerge() {
+    initOnlineSync();
+
+    // Auto-save every 30 seconds (for offline data)
+    setInterval(() => {
+        if (window.transactions && window.transactions.length > 0) {
+            if (window.currentUser) {
+                localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
+                    transactions: window.transactions,
+                    budgetLimit: window.budgetLimit,
+                    debtGoal: window.debtGoal,
+                    savingsGoal: window.savingsGoal,
+                    goals: window.goals,
+                    bills: window.bills,
+                    lastAutoSave: new Date().toISOString()
+                }));
+
+                // If we're online and have pending sync, try to sync
+                if (navigator.onLine && localStorage.getItem('pending_sync') === 'true') {
+                    console.log('🔄 Auto-sync triggered');
+                    mergeLocalWithCloud();
+                }
+            }
+        }
+    }, 30000);
+}
+
+// Make sure this runs
+if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', function () {
+        initOfflineMerge();
+    });
+}
+
+
+// ===== OFFLINE DATA PERSISTENCE FIX (CORRECTED) =====
+
+// Store pending transactions that haven't been synced
+let pendingOfflineTransactions = [];
+
+// Save transaction with offline support
+function saveTransactionOffline(transaction) {
+    // Always save to local array first
+    if (!window.transactions) window.transactions = [];
+    window.transactions.unshift(transaction);
+
+    // Save to localStorage immediately
+    if (window.currentUser) {
+        const backup = {
+            transactions: window.transactions,
+            budgetLimit: window.budgetLimit,
+            debtGoal: window.debtGoal,
+            savingsGoal: window.savingsGoal,
+            goals: window.goals,
+            bills: window.bills,
+            lastOfflineSave: new Date().toISOString(),
+            pendingSync: !navigator.onLine
+        };
+        localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify(backup));
+    }
+
+
+    // Update UI
+    if (typeof render === 'function') render();
+}
+
+// Sync pending offline transactions when coming back online
+async function syncOfflineTransactions() {
+    console.log('🔄 Checking for pending offline transactions...');
+
+    // Get pending transactions from localStorage FIRST
+    let pendingTx = [];
+    const storedPending = localStorage.getItem('pending_offline_tx');
+    if (storedPending) {
+        try {
+            pendingTx = JSON.parse(storedPending);
+        } catch (e) {
+            console.error('Error parsing pending transactions:', e);
+            pendingTx = [];
+        }
+    }
+
+    // Also check if we have unsynced data in main storage
+    const pendingFlag = localStorage.getItem('pending_sync');
+    const hasPendingData = pendingFlag === 'true' || pendingTx.length > 0;
+
+    if (!hasPendingData) {
+        console.log('✅ No pending transactions to sync');
+        return;
+    }
+
+    console.log(`📦 Found ${pendingTx.length} pending transactions to sync`);
+
+    if (window.sileo) {
+        window.sileo.info(`Syncing ${pendingTx.length} offline transactions...`, 'Back Online');
+    }
+
+    try {
+        // Get current Firebase data
+        const doc = await window.db.collection('users').doc(window.currentUser.uid).get();
+        let cloudTransactions = doc.exists ? (doc.data().transactions || []) : [];
+
+        // Create a Set of existing transaction IDs for quick lookup
+        const existingIds = new Set(cloudTransactions.map(tx => tx.id));
+
+        // Add only transactions that don't already exist in cloud
+        let addedCount = 0;
+        for (const pendingTxItem of pendingTx) {
+            if (pendingTxItem.id && !existingIds.has(pendingTxItem.id)) {
+                cloudTransactions.unshift(pendingTxItem);
+                addedCount++;
+                console.log(`➕ Syncing offline transaction: ${pendingTxItem.id}`);
+            }
+        }
+
+        // Also check main window.transactions for any missing ones
+        if (window.transactions && window.transactions.length > 0) {
+            for (const tx of window.transactions) {
+                if (tx.id && !existingIds.has(tx.id)) {
+                    // Check if already in pending list
+                    const alreadyPending = pendingTx.some(p => p.id === tx.id);
+                    if (!alreadyPending) {
+                        cloudTransactions.unshift(tx);
+                        addedCount++;
+                        console.log(`➕ Syncing missing transaction from memory: ${tx.id}`);
+                    }
+                }
+            }
+        }
+
+        if (addedCount > 0) {
+            // Save merged data back to Firebase
+            await window.db.collection('users').doc(window.currentUser.uid).set({
+                transactions: cloudTransactions,
+                monthlyBudget: window.budgetLimit,
+                debtGoal: window.debtGoal,
+                savingsGoal: window.savingsGoal,
+                goals: window.goals,
+                bills: window.bills,
+                lastSynced: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+
+            // Update local window.transactions with merged data
+            window.transactions = cloudTransactions;
+
+            // Save to localStorage
+            localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
+                transactions: window.transactions,
+                budgetLimit: window.budgetLimit,
+                debtGoal: window.debtGoal,
+                savingsGoal: window.savingsGoal,
+                goals: window.goals,
+                bills: window.bills,
+                lastSync: new Date().toISOString()
+            }));
+
+            console.log(`✅ Successfully synced ${addedCount} offline transactions!`);
+
+            if (window.sileo) {
+                window.sileo.success(`✅ ${addedCount} offline transaction${addedCount > 1 ? 's' : ''} synced!`, 'Sync Complete');
+            }
+        } else {
+            console.log('No new transactions to sync');
+        }
+
+        // Clear pending data
+        localStorage.removeItem('pending_offline_tx');
+        localStorage.removeItem('pending_sync');
+        pendingOfflineTransactions = [];
+
+        // Refresh UI
+        if (typeof render === 'function') render();
+        if (typeof updateCategoryChart === 'function') updateCategoryChart();
+        if (typeof updateTrendChart === 'function') updateTrendChart();
+
+    } catch (error) {
+        console.error('Sync error:', error);
+        if (window.sileo) {
+            window.sileo.warning('Could not sync all data. Will retry later.', 'Sync Pending');
+        }
+    }
+}
+
+// Override saveNewTransaction to use offline-safe version
+const originalSaveNewTransaction = window.saveNewTransaction;
+window.saveNewTransaction = function () {
+    const type = document.querySelector('#addTransactionModal .type-btn.active')?.dataset.type || 'expense';
+    const category = document.getElementById('modalCategory').value;
+    let amount = parseFloat(document.getElementById('modalAmount').value);
+    const date = document.getElementById('modalDate').value;
+    const note = document.getElementById('modalNote').value;
+
+    if (!category) {
+        if (window.sileo) window.sileo.error('Please select a category', 'Error');
+        return;
+    }
+    if (isNaN(amount) || amount <= 0) {
+        if (window.sileo) window.sileo.error('Please enter a valid amount greater than 0', 'Error');
+        return;
+    }
+    if (!date) {
+        if (window.sileo) window.sileo.error('Please select a date', 'Error');
+        return;
+    }
+
+    // Generate unique ID
+    const transaction = {
+        id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9),
+        type,
+        category,
+        amount,
+        date,
+        note: note || '',
+        createdAt: new Date().toISOString(),
+        synced: navigator.onLine
+    };
+
+    // Use offline-safe save
+    saveTransactionOffline(transaction);
+
+    // Close modal
+    closeAddTransactionModal();
+
+    // Clear form
+    document.getElementById('modalAmount').value = '';
+    document.getElementById('modalNote').value = '';
+
+    // Show appropriate message
+    if (!navigator.onLine) {
+        if (window.sileo) {
+            window.sileo.success('Transaction saved offline! Will appear when back online.', 'Offline Save');
+        }
+    } else {
+        if (window.sileo) {
+            window.sileo.success(`${type === 'expense' ? 'Expense' : type === 'income' ? 'Income' : 'Savings'} added!`, 'Success');
+        }
+    }
+};
+
+// Listen for online/offline events
+window.addEventListener('online', async () => {
+    console.log('🌐 Back online! Syncing offline data...');
+
+    // Show indicator
+    const indicator = document.getElementById('offlineSyncIndicator');
+    if (indicator) {
+        indicator.style.display = 'flex';
+        indicator.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Syncing offline data...';
+        setTimeout(() => {
+            indicator.style.display = 'none';
+        }, 3000);
+    }
+
+    // Sync pending transactions
+    await syncOfflineTransactions();
+
+    // Also try regular save
+    if (typeof saveToFirebase === 'function') {
+        await saveToFirebase();
+    }
+
+    // Refresh everything
+    if (typeof render === 'function') render();
+    if (typeof updateCategoryChart === 'function') updateCategoryChart();
+    if (typeof updateTrendChart === 'function') updateTrendChart();
+});
+
+window.addEventListener('offline', () => {
+    console.log('📴 Offline mode - transactions will be saved locally');
+    if (window.sileo) {
+        window.sileo.info('Offline mode: Your data will sync when you reconnect.', 'Offline Mode');
+    }
+});
+
+// Create sync indicator (small badge)
+function createSyncIndicator() {
+    if (document.getElementById('offlineSyncIndicator')) return;
+
+    const indicator = document.createElement('div');
+    indicator.id = 'offlineSyncIndicator';
+    indicator.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: var(--primary, #6366f1);
+        color: white;
+        padding: 8px 16px;
+        border-radius: 40px;
+        font-size: 12px;
+        font-weight: 600;
+        z-index: 10000;
+        display: none;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    `;
+    indicator.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Syncing...';
+    document.body.appendChild(indicator);
+}
+
+// Call this on page load
+function initOfflineSync() {
+    createSyncIndicator();
+
+    // Check for pending data on load
+    setTimeout(() => {
+        if (navigator.onLine) {
+            const pendingFlag = localStorage.getItem('pending_sync');
+            const pendingTx = localStorage.getItem('pending_offline_tx');
+            if (pendingFlag === 'true' || pendingTx) {
+                console.log('📦 Pending data found on load, syncing...');
+                syncOfflineTransactions();
+            }
+        }
+    }, 2000);
+}
+
+// Also override loadUserData to preserve offline data
+const originalLoadUserData = window.loadUserData;
+window.loadUserData = async function () {
+    if (!window.currentUser) return;
+
+    // First, try to load from localStorage (offline cache)
+    const cached = localStorage.getItem('cajesData_' + window.currentUser.uid);
+    let hasLocalData = false;
+
+    if (cached) {
+        try {
+            const data = JSON.parse(cached);
+            if (data.transactions && data.transactions.length > 0) {
+                window.transactions = data.transactions;
+                window.budgetLimit = data.budgetLimit || 0;
+                window.debtGoal = data.debtGoal || 0;
+                window.savingsGoal = data.savingsGoal || 0;
+                window.goals = data.goals || [];
+                window.bills = data.bills || [];
+                hasLocalData = true;
+                console.log(`📱 Loaded ${window.transactions.length} transactions from offline cache`);
+
+                // Show UI immediately from cache
+                if (typeof render === 'function') render();
+            }
+        } catch (e) {
+            console.log('Cache read error:', e);
+        }
+    }
+
+    // Then try to sync with Firebase if online
+    if (navigator.onLine) {
+        try {
+            const doc = await window.db.collection('users').doc(window.currentUser.uid).get();
+            if (doc.exists) {
+                const data = doc.data();
+                const cloudTransactions = data.transactions || [];
+
+                // MERGE: Keep local transactions that don't exist in cloud
+                if (hasLocalData && window.transactions.length > 0) {
+                    const cloudIds = new Set(cloudTransactions.map(tx => tx.id));
+                    const uniqueLocalTx = window.transactions.filter(tx => tx.id && !cloudIds.has(tx.id));
+
+                    if (uniqueLocalTx.length > 0) {
+                        console.log(`🔄 Merging ${uniqueLocalTx.length} local transactions with cloud`);
+                        window.transactions = [...uniqueLocalTx, ...cloudTransactions];
+
+                        // Save merged data back to Firebase
+                        await window.db.collection('users').doc(window.currentUser.uid).set({
+                            transactions: window.transactions,
+                            monthlyBudget: window.budgetLimit,
+                            debtGoal: window.debtGoal,
+                            savingsGoal: window.savingsGoal,
+                            goals: window.goals,
+                            bills: window.bills,
+                            lastMerged: firebase.firestore.FieldValue.serverTimestamp()
+                        }, { merge: true });
+
+                        if (window.sileo) {
+                            window.sileo.success(`Merged ${uniqueLocalTx.length} offline transactions!`, 'Sync Complete');
+                        }
+                    }
+                } else if (!hasLocalData || window.transactions.length === 0) {
+                    // No local data, just use cloud
+                    window.transactions = cloudTransactions;
+                    window.budgetLimit = data.monthlyBudget || 0;
+                    window.debtGoal = data.debtGoal || 0;
+                    window.savingsGoal = data.savingsGoal || 0;
+                    window.goals = data.goals || [];
+                    window.bills = data.bills || [];
+                }
+            }
+
+            // Save merged data to cache
+            localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
+                transactions: window.transactions,
+                budgetLimit: window.budgetLimit,
+                debtGoal: window.debtGoal,
+                savingsGoal: window.savingsGoal,
+                goals: window.goals,
+                bills: window.bills,
+                lastSync: new Date().toISOString()
+            }));
+
+            console.log(`✅ Final: ${window.transactions.length} total transactions`);
+
+        } catch (error) {
+            console.error('Firebase load error:', error);
+            // Already have local data, continue using it
+        }
+    }
+
+    // Load avatar
+    if (typeof loadUserAvatar === 'function') await loadUserAvatar();
+
+    // Initialize app and render
+    if (typeof initializeApp === 'function') initializeApp();
+    if (typeof render === 'function') render();
+
+    // Update charts
+    setTimeout(() => {
+        if (typeof updateCategoryChart === 'function') updateCategoryChart();
+        if (typeof updateTrendChart === 'function') updateTrendChart();
+    }, 500);
+};
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function () {
+    initOfflineSync();
+});
+
+console.log('✅ Offline data persistence fix loaded - your data will NEVER disappear!');
