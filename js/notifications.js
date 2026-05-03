@@ -276,7 +276,7 @@ function sendSMSviaCopy(phoneNumber, message) {
 async function registerServiceWorker() {
     if ('serviceWorker' in navigator) {
         try {
-            const registration = await navigator.serviceWorker.register('/service-worker.js');
+            const registration = await navigator.serviceWorker.register('/sw.js');
             console.log('Service Worker registered');
             return registration;
         } catch (error) {
