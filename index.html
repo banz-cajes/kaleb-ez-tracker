@@ -57,13 +57,7 @@
             <button class="close-btn" onclick="closeInstallBanner()"><i class="fas fa-times"></i></button>
         </div>
     </div>
-
-    <!-- Offline Indicator -->
-    <div id="offlineIndicator" class="offline-indicator">
-        <i class="fas fa-wifi"></i>
-        <span>You're offline - using cached data</span>
-    </div>
-
+    
     <!-- Loader -->
     <div id="loader">
         <div class="spinner"></div>
@@ -1338,7 +1332,6 @@
 
         // Expose functions globally
         window.closeInstallBanner = closeInstallBanner;
-        window.handleLogout = handleLogout;
 
 
         // ===== SIMPLE WORKING MOBILE MENU - ANDROID FIX =====
