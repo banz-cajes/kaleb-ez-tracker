@@ -1378,58 +1378,287 @@ function updateTrendChart() {
     });
 }
 
-// Update category chart
+// Update category chart - FIXED to work with selected period
 function updateCategoryChart() {
     const period = document.getElementById('categoryPeriod')?.value || 'month';
-    const now = new Date();
-    let startDate;
+    const canvas = document.getElementById('categoryChart');
+    if (!canvas) return;
 
+    const ctx = canvas.getContext('2d');
+    const transactions = window.transactions || [];
+
+    // Get current date for reference
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    let filteredTransactions = [];
+    let periodLabel = '';
+
+    // Filter based on selected period
     if (period === 'week') {
-        startDate = new Date(now.setDate(now.getDate() - 7));
+        // Last 7 days
+        const weekAgo = new Date();
+        weekAgo.setDate(now.getDate() - 7);
+        const weekAgoStr = weekAgo.toISOString().split('T')[0];
+
+        filteredTransactions = transactions.filter(t => {
+            if (t.type !== 'expense') return false;
+            return t.date >= weekAgoStr;
+        });
+        periodLabel = 'Last 7 Days';
+
     } else if (period === 'month') {
-        startDate = new Date(now.setMonth(now.getMonth() - 1));
-    } else {
-        startDate = new Date(now.setFullYear(now.getFullYear() - 1));
+        // Current month (based on actual month, not last 30 days)
+        const currentMonthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
+
+        filteredTransactions = transactions.filter(t => {
+            if (t.type !== 'expense') return false;
+            // Check if transaction date starts with current year-month
+            return t.date && t.date.startsWith(currentMonthStr);
+        });
+        periodLabel = `${new Date(currentYear, currentMonth).toLocaleString('default', { month: 'long' })} ${currentYear}`;
+
+    } else if (period === 'year') {
+        // Current year
+        filteredTransactions = transactions.filter(t => {
+            if (t.type !== 'expense') return false;
+            // Check if transaction year matches current year
+            return t.date && t.date.startsWith(`${currentYear}-`);
+        });
+        periodLabel = `Year ${currentYear}`;
     }
 
+    // Also handle the case where month select might have a custom value
+    // Check if there's a month filter override
+    const monthFilter = document.getElementById('monthFilter');
+    if (monthFilter && monthFilter.value && period === 'month') {
+        const selectedMonth = monthFilter.value;
+        filteredTransactions = transactions.filter(t => {
+            if (t.type !== 'expense') return false;
+            return t.date && t.date.startsWith(selectedMonth);
+        });
+        const [year, month] = selectedMonth.split('-');
+        periodLabel = `${new Date(parseInt(year), parseInt(month) - 1).toLocaleString('default', { month: 'long' })} ${year}`;
+    }
+
+    console.log(`Category chart - Period: ${period}, Label: ${periodLabel}, Transactions: ${filteredTransactions.length}`);
+
+    // Aggregate by category
     const categoryData = {};
-    (window.transactions || []).forEach(t => {
-        if (t.type === 'expense' && new Date(t.date) >= startDate) {
-            categoryData[t.category] = (categoryData[t.category] || 0) + (t.amount || 0);
-        }
+    filteredTransactions.forEach(t => {
+        const category = t.category || 'Uncategorized';
+        const amount = t.amount || 0;
+        categoryData[category] = (categoryData[category] || 0) + amount;
     });
 
+    // Sort categories by amount (descending)
+    const sortedCategories = Object.entries(categoryData)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8); // Show top 8 categories
+
+    const labels = sortedCategories.map(item => item[0]);
+    const data = sortedCategories.map(item => item[1]);
+
+    // Colors for chart
+    const colors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec489a', '#06b6d4', '#84cc16'];
+
+    // Destroy old chart if exists
     if (categoryChart) {
         try { categoryChart.destroy(); } catch (e) { }
         categoryChart = null;
     }
 
-    const ctx = document.getElementById('categoryChart')?.getContext('2d');
-    if (!ctx) return;
+    // Create new chart
+    if (data.length > 0) {
+        categoryChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors.slice(0, labels.length),
+                    borderWidth: 0,
+                    hoverOffset: 10
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '65%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => {
+                                const total = data.reduce((a, b) => a + b, 0);
+                                const percentage = ((context.raw / total) * 100).toFixed(1);
+                                return `${context.label}: ${formatCurrency(context.raw)} (${percentage}%)`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
 
-    const colors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec489a', '#06b6d4'];
-    categoryChart = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: Object.keys(categoryData),
-            datasets: [{ data: Object.values(categoryData), backgroundColor: colors.slice(0, Object.keys(categoryData).length), borderWidth: 0 }]
-        },
-        options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { display: false } } }
-    });
-
-    const legendEl = document.getElementById('categoryLegend');
-    if (legendEl) {
-        if (Object.keys(categoryData).length === 0) {
-            legendEl.innerHTML = '<div class="legend-item">No data</div>';
-        } else {
-            legendEl.innerHTML = Object.keys(categoryData).map((cat, i) => `
-                <div class="legend-item">
-                    <span class="legend-color" style="background: ${colors[i % colors.length]}"></span>
-                    <span>${cat}</span>
+        // Update legend
+        const legendEl = document.getElementById('categoryLegend');
+        if (legendEl) {
+            legendEl.innerHTML = labels.map((cat, i) => `
+                <div class="legend-item" style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; cursor: pointer;" onclick="toggleCategoryChartSegment(${i})">
+                    <span class="legend-color" style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: ${colors[i % colors.length]}"></span>
+                    <span style="font-size: 12px;">${cat}</span>
+                    <span style="font-size: 12px; font-weight: 600; margin-left: auto;">${formatCurrency(data[i])}</span>
                 </div>
             `).join('');
         }
+
+        console.log('Category chart updated successfully');
+    } else {
+        // No data - show empty state
+        if (categoryChart) {
+            try { categoryChart.destroy(); } catch (e) { }
+            categoryChart = null;
+        }
+
+        // Clear canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.font = '14px Inter';
+        ctx.fillStyle = '#9ca3af';
+        ctx.textAlign = 'center';
+        ctx.fillText('No expense data for this period', canvas.width / 2, canvas.height / 2);
+
+        const legendEl = document.getElementById('categoryLegend');
+        if (legendEl) {
+            legendEl.innerHTML = '<div class="legend-item" style="justify-content: center; color: #9ca3af;">No data for selected period</div>';
+        }
     }
+}
+
+// Helper function to toggle chart segments (optional)
+function toggleCategoryChartSegment(index) {
+    if (!categoryChart) return;
+    const meta = categoryChart.getDatasetMeta(0);
+    meta.data[index].hidden = !meta.data[index].hidden;
+    categoryChart.update();
+}
+
+// Also fix the trend chart to match the same logic
+function updateTrendChart() {
+    const period = document.getElementById('trendPeriod')?.value || 'month';
+    const canvas = document.getElementById('trendChart');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    let labels = [], incomeData = [], expenseData = [];
+    const transactions = window.transactions || [];
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    if (period === 'week') {
+        // Last 7 days (actual days, not rolling incorrectly)
+        for (let i = 6; i >= 0; i--) {
+            const date = new Date();
+            date.setDate(now.getDate() - i);
+            const dateStr = date.toISOString().split('T')[0];
+            labels.push(date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }));
+
+            let income = 0, expense = 0;
+            transactions.forEach(t => {
+                if (t.date === dateStr) {
+                    if (t.type === 'income') income += t.amount || 0;
+                    if (t.type === 'expense') expense += t.amount || 0;
+                }
+            });
+            incomeData.push(income);
+            expenseData.push(expense);
+        }
+    } else if (period === 'month') {
+        // Current month (actual days in current month)
+        const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+        const currentMonthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
+
+        for (let d = 1; d <= daysInMonth; d++) {
+            const dateStr = `${currentMonthStr}-${String(d).padStart(2, '0')}`;
+            labels.push(d.toString());
+
+            let income = 0, expense = 0;
+            transactions.forEach(t => {
+                if (t.date === dateStr) {
+                    if (t.type === 'income') income += t.amount || 0;
+                    if (t.type === 'expense') expense += t.amount || 0;
+                }
+            });
+            incomeData.push(income);
+            expenseData.push(expense);
+        }
+    } else {
+        // Last 12 months
+        for (let i = 11; i >= 0; i--) {
+            const date = new Date();
+            date.setMonth(currentMonth - i);
+            const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            labels.push(date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }));
+
+            let income = 0, expense = 0;
+            transactions.forEach(t => {
+                if (t.date && t.date.startsWith(monthStr)) {
+                    if (t.type === 'income') income += t.amount || 0;
+                    if (t.type === 'expense') expense += t.amount || 0;
+                }
+            });
+            incomeData.push(income);
+            expenseData.push(expense);
+        }
+    }
+
+    // Destroy old chart
+    if (trendChart) {
+        try { trendChart.destroy(); } catch (e) { }
+        trendChart = null;
+    }
+
+    // Create new chart
+    trendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Income',
+                    data: incomeData,
+                    borderColor: '#10b981',
+                    backgroundColor: 'rgba(16,185,129,0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 3,
+                    pointBackgroundColor: '#10b981'
+                },
+                {
+                    label: 'Expenses',
+                    data: expenseData,
+                    borderColor: '#ef4444',
+                    backgroundColor: 'rgba(239,68,68,0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 3,
+                    pointBackgroundColor: '#ef4444'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'top', labels: { usePointStyle: true, boxWidth: 10 } },
+                tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatCurrency(ctx.raw)}` } }
+            },
+            scales: { y: { beginAtZero: true, ticks: { callback: (v) => formatCurrency(v) } } }
+        }
+    });
 }
 
 // Initialize charts
@@ -7063,3 +7292,4 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 console.log('✅ Offline data persistence fix loaded - your data will NEVER disappear!');
+
