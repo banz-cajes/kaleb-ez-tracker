@@ -88,7 +88,6 @@ window.loadUserData = async function () {
 // Call this inside your existing DOMContentLoaded
 if (typeof document !== 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
-        initOfflineStatus();
         // Also backup data every 30 seconds
         setInterval(() => { if (window.transactions) OfflineManager.persistLocally(); }, 30000);
     });
@@ -1820,27 +1819,6 @@ function updateDashboardStats() {
     if (cashOnHandElem) cashOnHandElem.innerText = formatCurrency(totalIncome - totalExpense);
 }
 
-function quickAdd(type, category) {
-    showAddTransactionModal();
-    setTimeout(() => {
-        setTransactionType(type);
-        const select = document.getElementById('modalCategory');
-        if (select) {
-            for (let i = 0; i < select.options.length; i++) {
-                if (select.options[i].value === category) { select.selectedIndex = i; break; }
-            }
-        }
-        const amountInput = document.getElementById('modalAmount');
-        if (amountInput) {
-            if (type === 'expense') amountInput.value = category === 'Food' ? 250 : category === 'Transport' ? 100 : 500;
-            else if (type === 'income') amountInput.value = 5000;
-            else amountInput.value = 1000;
-        }
-        document.getElementById('modalDate').valueAsDate = new Date();
-        document.getElementById('modalNote').value = '';
-    }, 100);
-}
-
 // Goal functions
 function showGoalModal() {
     const modal = document.getElementById('goalModal');
@@ -2638,7 +2616,6 @@ window.closeModal = closeModal;
 window.saveEdit = saveEdit;
 window.deleteTransactionById = deleteTransactionById;
 window.deleteCurrentTransaction = deleteCurrentTransaction;
-window.quickAdd = quickAdd;
 window.showGoalModal = showGoalModal;
 window.closeGoalModal = closeGoalModal;
 window.saveGoal = saveGoal;
@@ -6236,323 +6213,6 @@ window.calShowDay = calShowDay;
 window.closeSimpleModal = closeSimpleModal;
 window.calAddTransactionFromModal = calAddTransactionFromModal;
 
-
-// ===== DAILY SPENDING TIPS =====
-
-// Collection of financial tips
-const financialTips = [
-    {
-        tip: "Track every expense, no matter how small. Small purchases add up quickly!",
-        category: "tracking"
-    },
-    {
-        tip: "Follow the 50/30/20 rule: 50% needs, 30% wants, 20% savings.",
-        category: "budgeting"
-    },
-    {
-        tip: "Save ₱50 a day and you'll have ₱18,250 in a year!",
-        category: "savings"
-    },
-    {
-        tip: "Review your subscriptions monthly. Cancel unused ones.",
-        category: "bills"
-    },
-    {
-        tip: "Cook at home more often. It's healthier and saves money.",
-        category: "food"
-    },
-    {
-        tip: "Set automatic transfers to your savings account on payday.",
-        category: "savings"
-    },
-    {
-        tip: "Use cash for small purchases to avoid overspending.",
-        category: "spending"
-    },
-    {
-        tip: "Compare prices before buying big items. Wait 24 hours for impulse buys.",
-        category: "shopping"
-    },
-    {
-        tip: "Pay your credit card balance in full to avoid interest charges.",
-        category: "debt"
-    },
-    {
-        tip: "Create an emergency fund of 3-6 months of expenses.",
-        category: "savings"
-    },
-    {
-        tip: "Use public transportation when possible to save on gas and parking.",
-        category: "transport"
-    },
-    {
-        tip: "Bring your own coffee. ₱100/day saves ₱3,000/month!",
-        category: "food"
-    },
-    {
-        tip: "Shop with a list and stick to it. Avoid impulse purchases.",
-        category: "shopping"
-    },
-    {
-        tip: "Negotiate bills like internet and insurance annually.",
-        category: "bills"
-    },
-    {
-        tip: "Use energy-efficient appliances to lower electricity bills.",
-        category: "utilities"
-    },
-    {
-        tip: "Buy quality items that last longer instead of cheap replacements.",
-        category: "shopping"
-    },
-    {
-        tip: "Review your bank statements for errors or unauthorized charges.",
-        category: "tracking"
-    },
-    {
-        tip: "Set financial goals. Write them down and review monthly.",
-        category: "goals"
-    },
-    {
-        tip: "Use the envelope system for variable expenses like groceries.",
-        category: "budgeting"
-    },
-    {
-        tip: "Take advantage of sales and discounts, but only for needed items.",
-        category: "shopping"
-    },
-    {
-        tip: "Cancel gym memberships if you don't go. Exercise at home for free.",
-        category: "bills"
-    },
-    {
-        tip: "Borrow books from the library instead of buying them.",
-        category: "entertainment"
-    },
-    {
-        tip: "Use a water filter instead of buying bottled water.",
-        category: "savings"
-    },
-    {
-        tip: "Plan your meals for the week to reduce food waste.",
-        category: "food"
-    },
-    {
-        tip: "Buy generic brands. They often have the same quality as name brands.",
-        category: "shopping"
-    },
-    {
-        tip: "Use cashback apps and rewards programs for everyday purchases.",
-        category: "savings"
-    },
-    {
-        tip: "Do your own home repairs using YouTube tutorials.",
-        category: "home"
-    },
-    {
-        tip: "Sell items you no longer use. One person's trash is another's treasure.",
-        category: "income"
-    },
-    {
-        tip: "Use a programmable thermostat to save on heating and cooling.",
-        category: "utilities"
-    },
-    {
-        tip: "Pack lunch for work instead of eating out every day.",
-        category: "food"
-    },
-    {
-        tip: "Review your insurance policies annually to ensure you're not overpaying.",
-        category: "bills"
-    },
-    {
-        tip: "Use public parks for free entertainment instead of paid attractions.",
-        category: "entertainment"
-    },
-    {
-        tip: "Wait for sales before buying seasonal items like clothes and decorations.",
-        category: "shopping"
-    },
-    {
-        tip: "Use a reusable water bottle and coffee mug to save money.",
-        category: "savings"
-    },
-    {
-        tip: "Learn basic sewing to repair clothes instead of replacing them.",
-        category: "savings"
-    },
-    {
-        tip: "Carpool with coworkers to save on gas and parking.",
-        category: "transport"
-    },
-    {
-        tip: "Use price match guarantees at stores to get the best deal.",
-        category: "shopping"
-    },
-    {
-        tip: "Cancel unused streaming services. Rotate subscriptions monthly.",
-        category: "bills"
-    },
-    {
-        tip: "Use a budgeting app like this one to track every peso!",
-        category: "tracking"
-    },
-    {
-        tip: "Celebrate small financial wins. Every peso saved is progress!",
-        category: "motivation"
-    }
-];
-
-// Get today's tip (based on date for consistency)
-function getDailyTip() {
-    const today = new Date();
-    const dayOfYear = Math.floor((today - new Date(today.getFullYear(), 0, 0)) / (1000 * 60 * 60 * 24));
-    const tipIndex = dayOfYear % financialTips.length;
-    return financialTips[tipIndex];
-}
-
-// Get random tip
-function getRandomTip() {
-    const randomIndex = Math.floor(Math.random() * financialTips.length);
-    return financialTips[randomIndex];
-}
-
-// Update tip display
-function updateDailyTip() {
-    const tip = getDailyTip();
-    const tipElement = document.getElementById('dailyTipText');
-    if (tipElement) {
-        tipElement.innerHTML = tip.tip;
-    }
-}
-
-// Refresh tip (get new random tip)
-function refreshDailyTip() {
-    const tip = getRandomTip();
-    const tipElement = document.getElementById('dailyTipText');
-    if (tipElement) {
-        // Add fade animation
-        tipElement.style.opacity = '0';
-        setTimeout(() => {
-            tipElement.innerHTML = tip.tip;
-            tipElement.style.opacity = '1';
-
-            // Show success notification
-            if (window.sileo) {
-                window.sileo.success('New tip loaded! 💡', 'Daily Tip');
-            }
-        }, 150);
-    }
-}
-
-// Share tip function
-function shareTip() {
-    const tipText = document.getElementById('dailyTipText')?.innerText || '';
-    if (navigator.share) {
-        navigator.share({
-            title: 'Financial Tip from Kaleb Ez Tracker',
-            text: tipText,
-            url: window.location.href
-        }).catch(() => {
-            copyTipToClipboard(tipText);
-        });
-    } else {
-        copyTipToClipboard(tipText);
-    }
-}
-
-// Copy tip to clipboard
-function copyTipToClipboard(tipText) {
-    navigator.clipboard.writeText(tipText).then(() => {
-        if (window.sileo) {
-            window.sileo.success('Tip copied to clipboard! 📋', 'Shared');
-        } else {
-            alert('Tip copied: ' + tipText);
-        }
-    }).catch(() => {
-        if (window.sileo) {
-            window.sileo.error('Could not copy tip', 'Error');
-        }
-    });
-}
-
-// Get personalized tip based on user spending
-function getPersonalizedTip() {
-    if (!window.transactions || window.transactions.length === 0) {
-        return getRandomTip();
-    }
-
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    const monthTransactions = window.transactions.filter(t => t.date?.startsWith(currentMonth));
-
-    const foodExpenses = monthTransactions.filter(t =>
-        t.type === 'expense' && t.category?.toLowerCase().includes('food')
-    ).reduce((sum, t) => sum + t.amount, 0);
-
-    const transportExpenses = monthTransactions.filter(t =>
-        t.type === 'expense' && t.category?.toLowerCase().includes('transport')
-    ).reduce((sum, t) => sum + t.amount, 0);
-
-    const entertainmentExpenses = monthTransactions.filter(t =>
-        t.type === 'expense' && (t.category?.toLowerCase().includes('entertainment') || t.category?.toLowerCase().includes('games'))
-    ).reduce((sum, t) => sum + t.amount, 0);
-
-    if (foodExpenses > 5000) {
-        return { tip: "You're spending a lot on food this month. Try cooking at home more often!", category: "personalized" };
-    }
-    if (transportExpenses > 3000) {
-        return { tip: "Consider carpooling or using public transport to reduce transportation costs.", category: "personalized" };
-    }
-    if (entertainmentExpenses > 2000) {
-        return { tip: "Look for free entertainment options like parks, libraries, and community events.", category: "personalized" };
-    }
-
-    return getRandomTip();
-}
-
-// Initialize daily tip
-function initDailyTip() {
-    updateDailyTip();
-
-    // Optional: Change tip every 24 hours (when page refreshes)
-    // Store last tip date to show new tip on next day
-    const lastTipDate = localStorage.getItem('lastTipDate');
-    const today = new Date().toDateString();
-
-    if (lastTipDate !== today) {
-        localStorage.setItem('lastTipDate', today);
-        // Tip already updated by getDailyTip which uses date
-    }
-}
-
-// Call on dashboard view
-function refreshDashboardTips() {
-    if (document.getElementById('dashboardView')?.classList.contains('active')) {
-        updateDailyTip();
-    }
-}
-
-// Make functions global
-window.refreshDailyTip = refreshDailyTip;
-window.shareTip = shareTip;
-window.initDailyTip = initDailyTip;
-
-// Initialize when dashboard becomes active
-const originalSwitchViewForTips = window.switchView;
-if (originalSwitchViewForTips) {
-    window.switchView = function (viewName) {
-        originalSwitchViewForTips(viewName);
-        if (viewName === 'dashboard') {
-            setTimeout(updateDailyTip, 100);
-        }
-    };
-}
-
-// Auto-initialize
-document.addEventListener('DOMContentLoaded', function () {
-    setTimeout(initDailyTip, 500);
-});
-
 // Enable offline data persistence
 if (window.db && firebase.firestore) {
     window.db.enablePersistence()
@@ -7293,3 +6953,63 @@ document.addEventListener('DOMContentLoaded', function () {
 
 console.log('✅ Offline data persistence fix loaded - your data will NEVER disappear!');
 
+// Dummy function to prevent error
+function initOfflineStatus() {
+    console.log('initOfflineStatus called but disabled');
+}
+
+// ===== BOTTOM TAB BAR INITIALIZATION =====
+function initBottomTabs() {
+    const tabs = document.querySelectorAll('.tab-item');
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', (e) => {
+            const tabName = tab.dataset.tab;
+
+            // Update active class on tabs
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+
+            // Switch view
+            switchView(tabName);
+        });
+    });
+}
+
+// Updated switchView function
+function switchView(viewName) {
+    // Update views
+    const views = ['dashboardView', 'transactionsView', 'analyticsView', 'goalsView', 'billsView', 'settingsView', 'householdView'];
+    views.forEach(view => {
+        const el = document.getElementById(view);
+        if (el) el.classList.remove('active');
+    });
+
+    const activeView = document.getElementById(viewName + 'View');
+    if (activeView) activeView.classList.add('active');
+
+    // Update tab active state
+    const tabs = document.querySelectorAll('.tab-item');
+    tabs.forEach(tab => {
+        if (tab.dataset.tab === viewName) {
+            tab.classList.add('active');
+        } else {
+            tab.classList.remove('active');
+        }
+    });
+
+    // Special handlers
+    if (viewName === 'analytics' && typeof window.updateAnalytics === 'function') {
+        setTimeout(() => window.updateAnalytics(), 100);
+    }
+
+    if (viewName === 'household' && typeof loadHousehold === 'function') {
+        setTimeout(() => loadHousehold(), 100);
+    }
+}
+
+// Call in DOMContentLoaded
+document.addEventListener('DOMContentLoaded', function () {
+    initBottomTabs();
+    // ... rest of your initialization
+});
