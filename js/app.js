@@ -6427,10 +6427,14 @@ async function mergeLocalWithCloud() {
 
 // Override saveToFirebase to track pending changes
 const originalSaveToFirebase = window.saveToFirebase;
+// ===== FIX: SINGLE saveToFirebase function (NO DUPLICATES) =====
+// Remove ALL other saveToFirebase definitions and keep ONLY this one:
+
 window.saveToFirebase = async function () {
-    // Always save locally first
-    if (window.currentUser) {
-        localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
+    if (!window.currentUser) {
+        console.log('No user logged in, saving locally only');
+        // Save to localStorage as backup
+        localStorage.setItem('cajesData_local', JSON.stringify({
             transactions: window.transactions,
             budgetLimit: window.budgetLimit,
             debtGoal: window.debtGoal,
@@ -6439,45 +6443,53 @@ window.saveToFirebase = async function () {
             bills: window.bills,
             lastBackup: new Date().toISOString()
         }));
-    }
-
-    // If offline, mark pending sync
-    if (!navigator.onLine) {
-        localStorage.setItem('pending_sync', 'true');
-        localStorage.setItem('pending_sync_time', Date.now().toString());
-        console.log('📝 Offline - data saved locally, pending sync');
-        if (window.sileo) {
-            window.sileo.warning('Saved locally. Will sync when online.', 'Offline Mode');
-        }
         if (typeof render === 'function') render();
         return true;
     }
 
-    // Online - try to save to Firebase
+    // Always save to localStorage first (backup)
+    localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
+        transactions: window.transactions,
+        budgetLimit: window.budgetLimit,
+        debtGoal: window.debtGoal,
+        savingsGoal: window.savingsGoal,
+        goals: window.goals,
+        bills: window.bills,
+        lastSync: new Date().toISOString()
+    }));
+
+    if (!navigator.onLine) {
+        console.log('Offline - data saved locally');
+        localStorage.setItem('pending_sync', 'true');
+        if (typeof render === 'function') render();
+        if (window.sileo) window.sileo.warning('Saved offline. Will sync when online.', 'Offline Mode');
+        return true;
+    }
+
     try {
-        if (window.currentUser && window.db) {
-            const dataToSave = {
-                transactions: window.transactions,
-                monthlyBudget: window.budgetLimit,
-                debtGoal: window.debtGoal,
-                savingsGoal: window.savingsGoal,
-                goals: window.goals,
-                bills: window.bills,
-                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
-            };
+        const db = window.db;
+        const dataToSave = {
+            transactions: window.transactions || [],
+            monthlyBudget: window.budgetLimit || 0,
+            debtGoal: window.debtGoal || 0,
+            savingsGoal: window.savingsGoal || 0,
+            goals: window.goals || [],
+            bills: window.bills || [],
+            lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+            userId: window.currentUser.uid  // ✅ ADD THIS - Critical!
+        };
 
-            await window.db.collection('users').doc(window.currentUser.uid).set(dataToSave, { merge: true });
-            console.log('✅ Data saved to Firebase');
+        await db.collection('users').doc(window.currentUser.uid).set(dataToSave, { merge: true });
+        console.log('Data saved to Firebase successfully');
+        localStorage.removeItem('pending_sync');
 
-            // Clear pending flag after successful save
-            localStorage.removeItem('pending_sync');
+        if (typeof render === 'function') render();
+        return true;
 
-            return true;
-        }
     } catch (error) {
         console.error('Save error:', error);
-        // If save fails, mark for later sync
         localStorage.setItem('pending_sync', 'true');
+        if (window.sileo) window.sileo.error('Save failed: ' + error.message, 'Error');
         return false;
     }
 };
@@ -6708,6 +6720,7 @@ async function syncOfflineTransactions() {
 
 // Override saveNewTransaction to use offline-safe version
 const originalSaveNewTransaction = window.saveNewTransaction;
+// ===== FIX: CORRECT saveNewTransaction function =====
 window.saveNewTransaction = function () {
     const type = document.querySelector('#addTransactionModal .type-btn.active')?.dataset.type || 'expense';
     const category = document.getElementById('modalCategory').value;
@@ -6731,34 +6744,40 @@ window.saveNewTransaction = function () {
     // Generate unique ID
     const transaction = {
         id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9),
-        type,
-        category,
-        amount,
-        date,
+        type: type,
+        category: category,
+        amount: amount,
+        date: date,
         note: note || '',
         createdAt: new Date().toISOString(),
-        synced: navigator.onLine
+        userId: window.currentUser?.uid || 'local'  // ✅ ADD userId
     };
 
-    // Use offline-safe save
-    saveTransactionOffline(transaction);
+    // Add to transactions array
+    if (!window.transactions) window.transactions = [];
+    window.transactions.unshift(transaction);
+
+    console.log('📝 Transaction added:', transaction);
+    console.log('Total transactions:', window.transactions.length);
+
+    // Save to Firebase/localStorage
+    window.saveToFirebase();
 
     // Close modal
-    closeAddTransactionModal();
+    window.closeAddTransactionModal();
 
     // Clear form
     document.getElementById('modalAmount').value = '';
     document.getElementById('modalNote').value = '';
 
-    // Show appropriate message
-    if (!navigator.onLine) {
-        if (window.sileo) {
-            window.sileo.success('Transaction saved offline! Will appear when back online.', 'Offline Save');
-        }
-    } else {
-        if (window.sileo) {
-            window.sileo.success(`${type === 'expense' ? 'Expense' : type === 'income' ? 'Income' : 'Savings'} added!`, 'Success');
-        }
+    // Force render
+    if (typeof render === 'function') {
+        render();
+    }
+
+    // Show success message
+    if (window.sileo) {
+        window.sileo.success(`${type === 'expense' ? 'Expense' : type === 'income' ? 'Income' : 'Savings'} added successfully!`, 'Success');
     }
 };
 
@@ -6842,12 +6861,18 @@ function initOfflineSync() {
 
 // Also override loadUserData to preserve offline data
 const originalLoadUserData = window.loadUserData;
+// ===== FIX: LOAD USER DATA WITH PENDING SYNC CHECK =====
 window.loadUserData = async function () {
+    console.log('Loading data for user:', window.currentUser?.uid);
+
     if (!window.currentUser) return;
 
-    // First, try to load from localStorage (offline cache)
+    const loader = document.getElementById('loader');
+    if (loader) loader.style.display = 'flex';
+
+    // First, check for pending offline data
+    const pendingSync = localStorage.getItem('pending_sync') === 'true';
     const cached = localStorage.getItem('cajesData_' + window.currentUser.uid);
-    let hasLocalData = false;
 
     if (cached) {
         try {
@@ -6859,10 +6884,9 @@ window.loadUserData = async function () {
                 window.savingsGoal = data.savingsGoal || 0;
                 window.goals = data.goals || [];
                 window.bills = data.bills || [];
-                hasLocalData = true;
-                console.log(`📱 Loaded ${window.transactions.length} transactions from offline cache`);
+                console.log(`📱 Loaded ${window.transactions.length} transactions from cache`);
 
-                // Show UI immediately from cache
+                // Show UI immediately
                 if (typeof render === 'function') render();
             }
         } catch (e) {
@@ -6870,16 +6894,17 @@ window.loadUserData = async function () {
         }
     }
 
-    // Then try to sync with Firebase if online
+    // Try to load from Firebase if online
     if (navigator.onLine) {
         try {
             const doc = await window.db.collection('users').doc(window.currentUser.uid).get();
+
             if (doc.exists) {
                 const data = doc.data();
                 const cloudTransactions = data.transactions || [];
 
-                // MERGE: Keep local transactions that don't exist in cloud
-                if (hasLocalData && window.transactions.length > 0) {
+                // MERGE: Keep transactions that don't exist in cloud (by ID)
+                if (window.transactions && window.transactions.length > 0) {
                     const cloudIds = new Set(cloudTransactions.map(tx => tx.id));
                     const uniqueLocalTx = window.transactions.filter(tx => tx.id && !cloudIds.has(tx.id));
 
@@ -6887,55 +6912,52 @@ window.loadUserData = async function () {
                         console.log(`🔄 Merging ${uniqueLocalTx.length} local transactions with cloud`);
                         window.transactions = [...uniqueLocalTx, ...cloudTransactions];
 
-                        // Save merged data back to Firebase
-                        await window.db.collection('users').doc(window.currentUser.uid).set({
-                            transactions: window.transactions,
-                            monthlyBudget: window.budgetLimit,
-                            debtGoal: window.debtGoal,
-                            savingsGoal: window.savingsGoal,
-                            goals: window.goals,
-                            bills: window.bills,
-                            lastMerged: firebase.firestore.FieldValue.serverTimestamp()
-                        }, { merge: true });
-
-                        if (window.sileo) {
-                            window.sileo.success(`Merged ${uniqueLocalTx.length} offline transactions!`, 'Sync Complete');
-                        }
+                        // Save merged data back
+                        await window.saveToFirebase();
+                    } else {
+                        window.transactions = cloudTransactions;
                     }
-                } else if (!hasLocalData || window.transactions.length === 0) {
-                    // No local data, just use cloud
+                } else {
                     window.transactions = cloudTransactions;
-                    window.budgetLimit = data.monthlyBudget || 0;
-                    window.debtGoal = data.debtGoal || 0;
-                    window.savingsGoal = data.savingsGoal || 0;
-                    window.goals = data.goals || [];
-                    window.bills = data.bills || [];
                 }
+
+                window.budgetLimit = data.monthlyBudget || 0;
+                window.debtGoal = data.debtGoal || 0;
+                window.savingsGoal = data.savingsGoal || 0;
+                window.goals = data.goals || [];
+                window.bills = data.bills || [];
+
+                console.log(`☁️ Loaded ${window.transactions.length} transactions from cloud`);
             }
 
-            // Save merged data to cache
-            localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
-                transactions: window.transactions,
-                budgetLimit: window.budgetLimit,
-                debtGoal: window.debtGoal,
-                savingsGoal: window.savingsGoal,
-                goals: window.goals,
-                bills: window.bills,
-                lastSync: new Date().toISOString()
-            }));
-
-            console.log(`✅ Final: ${window.transactions.length} total transactions`);
+            // Clear pending flag after successful sync
+            if (pendingSync) {
+                localStorage.removeItem('pending_sync');
+                if (window.sileo) window.sileo.success('Offline data synced!', 'Sync Complete');
+            }
 
         } catch (error) {
             console.error('Firebase load error:', error);
-            // Already have local data, continue using it
+            // Continue with cached data
         }
     }
 
-    // Load avatar
-    if (typeof loadUserAvatar === 'function') await loadUserAvatar();
+    // Save merged data to cache
+    if (window.currentUser) {
+        localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
+            transactions: window.transactions,
+            budgetLimit: window.budgetLimit,
+            debtGoal: window.debtGoal,
+            savingsGoal: window.savingsGoal,
+            goals: window.goals,
+            bills: window.bills,
+            lastSync: new Date().toISOString()
+        }));
+    }
 
-    // Initialize app and render
+    await window.migrateOldTransactions();
+    await window.loadUserAvatar();
+
     if (typeof initializeApp === 'function') initializeApp();
     if (typeof render === 'function') render();
 
@@ -6944,6 +6966,8 @@ window.loadUserData = async function () {
         if (typeof updateCategoryChart === 'function') updateCategoryChart();
         if (typeof updateTrendChart === 'function') updateTrendChart();
     }, 500);
+
+    if (loader) loader.style.display = 'none';
 };
 
 // Initialize
