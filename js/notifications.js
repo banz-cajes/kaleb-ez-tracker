@@ -287,36 +287,56 @@ async function registerServiceWorker() {
 }
 
 // Request notification permission with better UX
+// Request notification permission with better UX
 async function requestNotificationPermission() {
     if (!("Notification" in window)) {
         console.log("Browser doesn't support notifications");
+        if (window.sileo) window.sileo.error('Your browser does not support notifications', 'Error');
         return false;
     }
 
     // Check if already granted
     if (Notification.permission === "granted") {
+        console.log('Notifications already granted');
         await registerServiceWorker();
         return true;
     }
 
     // Check if denied
     if (Notification.permission === "denied") {
+        console.log('Notifications denied by user');
         if (window.sileo) {
-            window.sileo.warning('Notifications are blocked. Please enable in browser settings.', 'Permission Blocked');
+            window.sileo.warning('Notifications are blocked. Please check your browser settings to enable them.', 'Permission Blocked');
         }
         return false;
     }
 
-    // Request permission
-    const permission = await Notification.requestPermission();
+    // Request permission - this shows the browser popup
+    console.log('Requesting notification permission...');
 
-    if (permission === "granted") {
-        // Register service worker for better notifications
-        await registerServiceWorker();
-        return true;
+    try {
+        const permission = await Notification.requestPermission();
+
+        if (permission === "granted") {
+            console.log('Notification permission granted');
+            // Register service worker for better notifications
+            await registerServiceWorker();
+
+            if (window.sileo) {
+                window.sileo.success('Notifications enabled! You will receive alerts.', 'Success');
+            }
+            return true;
+        } else {
+            console.log('Notification permission denied');
+            if (window.sileo) {
+                window.sileo.warning('Please allow notifications to receive alerts', 'Permission Needed');
+            }
+            return false;
+        }
+    } catch (error) {
+        console.error('Error requesting notification permission:', error);
+        return false;
     }
-
-    return false;
 }
 
 (function tryRegisterServiceWorkerOnLoad() {
@@ -329,3 +349,33 @@ async function requestNotificationPermission() {
         run();
     }
 })();
+
+// Toggle notifications
+async function toggleNotifications() {
+    const toggle = document.getElementById('notificationToggle');
+    const settings = document.getElementById('notificationSettings');
+
+    if (toggle.checked) {
+        // Request permission when toggling ON
+        const granted = await requestNotificationPermission();
+
+        if (granted) {
+            settings.style.display = 'block';
+            localStorage.setItem('notifications_enabled', 'true');
+            // Send a test notification
+            setTimeout(() => {
+                showNotification('✅ Notifications Enabled', 'You will now receive alerts for bills, budgets, and goals.', 'test');
+            }, 500);
+        } else {
+            toggle.checked = false;
+            // Don't show settings if not granted
+            settings.style.display = 'none';
+        }
+    } else {
+        settings.style.display = 'none';
+        localStorage.setItem('notifications_enabled', 'false');
+        if (window.sileo) {
+            window.sileo.info('Notifications disabled', 'Settings');
+        }
+    }
+}
