@@ -610,6 +610,12 @@ function render() {
     if (!tbody) return;
     tbody.innerHTML = '';
 
+    // ===== ALL TIME TOTALS (No date filter - EVER) =====
+    let allTimeIncome = 0;
+    let allTimeExpense = 0;
+    let allTimeSavings = 0;
+    
+    // ===== MONTHLY/PERIOD TOTALS =====
     let totalIncome = 0, totalExpense = 0, totalSavings = 0, cashOnHand = 0;
     let debtPaid = 0, todaySpent = 0, weekSpent = 0, monthSpent = 0;
     let monthIncome = 0, monthExpense = 0, monthSavings = 0;
@@ -624,6 +630,22 @@ function render() {
 
     window.filteredTransactionIds = [];
 
+    // FIRST PASS: Calculate ALL TIME totals (EVERY transaction)
+    sortedTransactions.forEach((t) => {
+        const amount = t.amount || 0;
+        if (t.type === 'income') {
+            allTimeIncome += amount;
+        } else if (t.type === 'expense') {
+            allTimeExpense += amount;
+        } else if (t.type === 'savings') {
+            allTimeSavings += amount;
+        }
+    });
+    
+    // Calculate All Time Net Worth
+    const allTimeNetWorth = allTimeIncome + allTimeSavings - allTimeExpense;
+
+    // SECOND PASS: Calculate period-specific totals
     sortedTransactions.forEach((t) => {
         const amount = t.amount || 0;
         
@@ -653,6 +675,7 @@ function render() {
             }
         }
 
+        // Search and filter logic for transactions table
         const searchTerm = search.toLowerCase();
         const categoryMatch = t.category?.toLowerCase().includes(searchTerm);
         const noteMatch = t.note?.toLowerCase().includes(searchTerm);
@@ -663,7 +686,6 @@ function render() {
         if (matchesSearch && matchesMonth && matchesType) {
             window.filteredTransactionIds.push(t.id);
 
-            // SIMPLE VERSION - NO ICONS
             tbody.innerHTML += `<tr onclick="openEditModalById('${t.id}')" style="cursor: pointer;">
                 <td class="category-cell">
                     <div class="category-info">
@@ -689,92 +711,31 @@ function render() {
         }
     });
 
+    // Calculate derived values
     cashOnHand = totalIncome - totalExpense;
     const netWorth = totalIncome + totalSavings - totalExpense;
-    const savingsRate = totalIncome > 0 ? ((totalSavings / totalIncome) * 100).toFixed(1) : 0;
 
-    // Filtered totals
-    let filteredTotalIncome = 0, filteredTotalExpense = 0, filteredTotalSavings = 0;
-    sortedTransactions.forEach((t) => {
-        const amount = t.amount || 0;
-        const searchTerm = search.toLowerCase();
-        const categoryMatch = t.category?.toLowerCase().includes(searchTerm);
-        const noteMatch = t.note?.toLowerCase().includes(searchTerm);
-        const matchesSearch = search === '' || categoryMatch || noteMatch;
-        const matchesMonth = t.date?.startsWith(monthFilter) || monthFilter === '';
-        const matchesType = typeFilter === 'all' || t.type === typeFilter;
+    // ===== UPDATE ALL TIME STATS DISPLAY =====
+    const allTimeIncomeEl = document.getElementById('allTimeIncome');
+    const allTimeExpenseEl = document.getElementById('allTimeExpense');
+    const allTimeSavingsEl = document.getElementById('allTimeSavings');
+    const allTimeNetWorthEl = document.getElementById('allTimeNetWorth');
+    
+    if (allTimeIncomeEl) allTimeIncomeEl.innerText = formatCurrency(allTimeIncome);
+    if (allTimeExpenseEl) allTimeExpenseEl.innerText = formatCurrency(allTimeExpense);
+    if (allTimeSavingsEl) allTimeSavingsEl.innerText = formatCurrency(allTimeSavings);
+    if (allTimeNetWorthEl) allTimeNetWorthEl.innerText = formatCurrency(allTimeNetWorth);
+    
+    console.log(`📊 All Time Stats - Income: ${formatCurrency(allTimeIncome)}, Expenses: ${formatCurrency(allTimeExpense)}, Savings: ${formatCurrency(allTimeSavings)}, Net Worth: ${formatCurrency(allTimeNetWorth)}`);
 
-        if (matchesSearch && matchesMonth && matchesType) {
-            if (t.type === 'income') filteredTotalIncome += amount;
-            else if (t.type === 'expense') filteredTotalExpense += amount;
-            else if (t.type === 'savings') filteredTotalSavings += amount;
-        }
-    });
-
-    const filteredNet = filteredTotalIncome - filteredTotalExpense;
-
-    // Update summary bar
-    let summaryBar = document.getElementById('transactionsSummary');
-    if (!summaryBar) {
-        summaryBar = document.createElement('div');
-        summaryBar.id = 'transactionsSummary';
-        summaryBar.className = 'transactions-summary';
-        const transactionsHeader = document.querySelector('.transactions-header');
-        if (transactionsHeader) {
-            transactionsHeader.insertAdjacentElement('afterend', summaryBar);
-        }
-    }
-
-    summaryBar.innerHTML = `
-    <div class="summary-cards">
-        <div class="summary-card income">
-            <div class="summary-icon"><i class="fas fa-arrow-down"></i></div>
-            <div class="summary-info">
-                <span class="summary-label">Total Income</span>
-                <span class="summary-value" style="color: #10b981;">${formatCurrency(filteredTotalIncome)}</span>
-            </div>
-        </div>
-        <div class="summary-card expense">
-            <div class="summary-icon"><i class="fas fa-arrow-up"></i></div>
-            <div class="summary-info">
-                <span class="summary-label">Total Expenses</span>
-                <span class="summary-value" style="color: #ef4444;">${formatCurrency(filteredTotalExpense)}</span>
-            </div>
-        </div>
-        <div class="summary-card savings">
-            <div class="summary-icon"><i class="fas fa-piggy-bank"></i></div>
-            <div class="summary-info">
-                <span class="summary-label">Total Savings</span>
-                <span class="summary-value" style="color: #3b82f6;">${formatCurrency(filteredTotalSavings)}</span>
-            </div>
-        </div>
-        <div class="summary-card net">
-            <div class="summary-icon"><i class="fas fa-chart-line"></i></div>
-            <div class="summary-info">
-                <span class="summary-label">Net Balance</span>
-                <span class="summary-value" style="color: #8b5cf6;">${formatCurrency(filteredNet)}</span>
-                <span class="summary-trend" style="font-size: 11px; color: ${filteredNet >= 0 ? '#10b981' : '#ef4444'};">
-                    ${filteredNet >= 0 ? '▲ Surplus' : '▼ Deficit'}
-                </span>
-            </div>
-        </div>
-    </div>
-`;
-
-    // Update UI elements
+    // ===== UPDATE DASHBOARD STATS =====
     document.getElementById('netWorthVal') && (document.getElementById('netWorthVal').innerText = formatCurrency(netWorth));
-    document.getElementById('netStatus') && (document.getElementById('netStatus').innerHTML = `<i class="fas fa-chart-line"></i> ${netWorth >= 0 ? 'Positive' : 'Debt Heavy'} | Saved: ${formatCurrency(totalSavings)}`);
+    document.getElementById('netStatus') && (document.getElementById('netStatus').innerHTML = `<i class="fas fa-chart-line"></i> ${netWorth >= 0 ? 'Positive' : 'Debt Heavy'}`);
     document.getElementById('spentToday') && (document.getElementById('spentToday').innerText = formatCurrency(todaySpent));
     document.getElementById('spent7Days') && (document.getElementById('spent7Days').innerText = formatCurrency(weekSpent));
     document.getElementById('spentMonth') && (document.getElementById('spentMonth').innerText = formatCurrency(monthSpent));
     document.getElementById('cashOnHand') && (document.getElementById('cashOnHand').innerText = formatCurrency(cashOnHand));
     document.getElementById('balanceLabel') && (document.getElementById('balanceLabel').innerHTML = `<i class="fas fa-chart-line"></i> Net: ${formatCurrency(monthIncome - monthExpense)} | Saved: ${formatCurrency(monthSavings)}`);
-
-    // Update savings rate display
-    const savingsRateDisplay = document.getElementById('savingsRateDisplay');
-    if (savingsRateDisplay) {
-        savingsRateDisplay.innerText = `${savingsRate}%`;
-    }
 
     // Budget Progress Bar
     if (document.getElementById('budgetBar') && document.getElementById('budgetText')) {
@@ -810,15 +771,14 @@ function render() {
             document.getElementById('savingsVal').innerHTML = `${formatCurrency(totalSavingsCalc)} Saved (${percentage.toFixed(1)}%)`;
         } else {
             document.getElementById('savingsBar').style.width = '0%';
-            document.getElementById('savingsVal').innerHTML = `No Savings Goal Set | Saved: ${formatCurrency(totalSavings)}`;
+            document.getElementById('savingsVal').innerHTML = `No Savings Goal Set`;
         }
     }
 
-    // Update breakdown sections
+    // Monthly Breakdown Sections (Expense and Income only)
     const expenseHistoryEl = document.getElementById('expenseHistory');
     const incomeHistoryEl = document.getElementById('incomeHistory');
-    let savingsHistoryElement = document.getElementById('savingsHistory');
-
+    
     if (expenseHistoryEl) {
         expenseHistoryEl.innerHTML = Object.entries(expenseByCat).map(([cat, amt]) => 
             `<div class="breakdown-item"><span>${cat}</span><span class="amount negative">${formatCurrency(amt)}</span></div>`
@@ -829,29 +789,6 @@ function render() {
         incomeHistoryEl.innerHTML = Object.entries(incomeByCat).map(([cat, amt]) => 
             `<div class="breakdown-item"><span>${cat}</span><span class="amount positive">${formatCurrency(amt)}</span></div>`
         ).join('') || '<div class="breakdown-item">No income this month</div>';
-    }
-    
-    // Create savings history section if it doesn't exist
-    if (!savingsHistoryElement && document.querySelector('.overview-grid')) {
-        const overviewGrid = document.querySelector('.overview-grid');
-        const savingsCard = document.createElement('div');
-        savingsCard.className = 'overview-card';
-        savingsCard.innerHTML = `
-            <div class="card-header">
-                <h3><i class="fas fa-piggy-bank"></i> Savings Breakdown</h3>
-            </div>
-            <div class="card-body">
-                <div id="savingsHistory" style="max-height: 200px; overflow-y: auto;"></div>
-            </div>
-        `;
-        overviewGrid.appendChild(savingsCard);
-        savingsHistoryElement = document.getElementById('savingsHistory');
-    }
-    
-    if (savingsHistoryElement) {
-        savingsHistoryElement.innerHTML = Object.entries(savingsByCat).map(([cat, amt]) => 
-            `<div class="breakdown-item"><span>${cat}</span><span class="amount savings" style="color: #3b82f6; font-weight: 600;">${formatCurrency(amt)}</span></div>`
-        ).join('') || '<div class="breakdown-item">No savings this month</div>';
     }
 
     renderGoals();
@@ -7113,3 +7050,4 @@ function saveTransactionOffline(transaction) {
         if (typeof updateTrendChart === 'function') updateTrendChart();
     }, 100);
 }
+
