@@ -214,57 +214,99 @@
             </div>
 
             <!-- Overview Cards -->
+            <!-- Remove the Savings Breakdown card and replace with All Time Stats -->
             <div class="overview-grid">
+                <!-- Expense Limit Card -->
                 <div class="overview-card">
                     <div class="card-header">
-                        <h3><i class="fas fa-chart-line"></i> Expense Limit</h3><button class="icon-btn"
-                            onclick="toggleInput('budgetGroup')"><i class="fas fa-pen"></i></button>
+                        <h3><i class="fas fa-chart-line"></i> Expense Limit</h3>
+                        <button class="icon-btn" onclick="toggleInput('budgetGroup')"><i
+                                class="fas fa-pen"></i></button>
                     </div>
                     <div class="card-body">
-                        <div class="amount-display"><span id="budgetText" class="current-amount">₱ 0.00</span><span
-                                class="total-amount">of ₱ 0.00</span></div>
+                        <div class="amount-display">
+                            <span id="budgetText" class="current-amount">₱ 0.00</span>
+                            <span class="total-amount">of ₱ 0.00</span>
+                        </div>
                         <div class="progress">
                             <div id="budgetBar" class="progress-bar primary" style="width: 0%"></div>
                         </div>
-                        <div id="budgetGroup" class="input-group hidden"><input id="setBudgetInput" type="text"
-                                placeholder="Set monthly budget (0 = no limit)" class="form-control"><button
-                                class="btn-primary btn-sm" style="margin-top: var(--space-sm); width: 100%;"
-                                onclick="updateBudget()">Save Budget</button></div>
+                        <div id="budgetGroup" class="input-group hidden">
+                            <input id="setBudgetInput" type="text" placeholder="Set monthly budget"
+                                class="form-control">
+                            <button class="btn-primary btn-sm" style="margin-top: var(--space-sm); width: 100%;"
+                                onclick="updateBudget()">Save Budget</button>
+                        </div>
                     </div>
                 </div>
+
+                <!-- Debt Tracker Card -->
                 <div class="overview-card">
                     <div class="card-header">
-                        <h3><i class="fas fa-credit-card"></i> Debt Tracker</h3><button class="icon-btn"
-                            onclick="toggleInput('debtGroup')"><i class="fas fa-pen"></i></button>
+                        <h3><i class="fas fa-credit-card"></i> Debt Tracker</h3>
+                        <button class="icon-btn" onclick="toggleInput('debtGroup')"><i class="fas fa-pen"></i></button>
                     </div>
                     <div class="card-body">
-                        <div class="amount-display"><span id="debtRemainingVal" class="current-amount danger">₱ 0.00
-                                Left</span></div>
+                        <div class="amount-display">
+                            <span id="debtRemainingVal" class="current-amount danger">₱ 0.00 Left</span>
+                        </div>
                         <div class="progress">
                             <div id="debtBar" class="progress-bar debt" style="width: 0%"></div>
                         </div>
-                        <div id="debtGroup" class="input-group hidden"><input id="setDebtInput" type="text"
-                                placeholder="Set debt goal (0 = no goal)" class="form-control"><button
-                                class="btn-primary btn-sm" style="margin-top: var(--space-sm); width: 100%;"
-                                onclick="updateDebtGoal()">Save
-                                Goal</button></div>
+                        <div id="debtGroup" class="input-group hidden">
+                            <input id="setDebtInput" type="text" placeholder="Set debt goal" class="form-control">
+                            <button class="btn-primary btn-sm" style="margin-top: var(--space-sm); width: 100%;"
+                                onclick="updateDebtGoal()">Save Goal</button>
+                        </div>
                     </div>
                 </div>
+
+                <!-- Savings Goal Card -->
                 <div class="overview-card">
                     <div class="card-header">
-                        <h3><i class="fas fa-piggy-bank"></i> Savings Goal</h3><button class="icon-btn"
-                            onclick="toggleInput('savingsGroup')"><i class="fas fa-pen"></i></button>
+                        <h3><i class="fas fa-piggy-bank"></i> Savings Goal</h3>
+                        <button class="icon-btn" onclick="toggleInput('savingsGroup')"><i
+                                class="fas fa-pen"></i></button>
                     </div>
                     <div class="card-body">
-                        <div class="amount-display"><span id="savingsVal" class="current-amount success">₱ 0.00
-                                Saved</span></div>
+                        <div class="amount-display">
+                            <span id="savingsVal" class="current-amount success">₱ 0.00 Saved</span>
+                        </div>
                         <div class="progress">
                             <div id="savingsBar" class="progress-bar savings" style="width: 0%"></div>
                         </div>
-                        <div id="savingsGroup" class="input-group hidden"><input id="setSavingsInput" type="text"
-                                placeholder="Set savings target (0 = no target)" class="form-control"><button
-                                class="btn-primary btn-sm" style="margin-top: var(--space-sm); width: 100%;"
-                                onclick="updateSavingsGoal()">Save Target</button></div>
+                        <div id="savingsGroup" class="input-group hidden">
+                            <input id="setSavingsInput" type="text" placeholder="Set savings target"
+                                class="form-control">
+                            <button class="btn-primary btn-sm" style="margin-top: var(--space-sm); width: 100%;"
+                                onclick="updateSavingsGoal()">Save Target</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- NEW: All Time Stats Card (replaces Savings Breakdown) -->
+                <div class="overview-card all-time-stats">
+                    <div class="card-header">
+                        <h3><i class="fas fa-infinity"></i> All Time Stats</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="all-time-item">
+                            <span class="all-time-label">Total Income</span>
+                            <span id="allTimeIncome" class="all-time-value income-value">₱ 0.00</span>
+                        </div>
+                        <div class="all-time-item">
+                            <span class="all-time-label">Total Expenses</span>
+                            <span id="allTimeExpense" class="all-time-value expense-value">₱ 0.00</span>
+                        </div>
+                        <div class="all-time-item">
+                            <span class="all-time-label">Total Savings</span>
+                            <span id="allTimeSavings" class="all-time-value savings-value">₱ 0.00</span>
+                        </div>
+                        <div class="all-time-divider"></div>
+                        <div class="all-time-item total">
+                            <span class="all-time-label">Net Worth</span>
+                            <span id="allTimeNetWorth" class="all-time-value net-value">₱ 0.00</span>
+                        </div>
                     </div>
                 </div>
             </div>
