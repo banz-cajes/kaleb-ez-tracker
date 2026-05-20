@@ -8894,3 +8894,107 @@ body {
     }
 }
 
+/* ===== FIX FOR ALL VIEWS - CONSISTENT TOP SPACING ===== */
+
+/* Method 1: Add padding to all views */
+.view {
+    padding-top: 38px !important;
+}
+
+/* Remove padding from main content to avoid double spacing */
+.main-content {
+    padding-top: 0 !important;
+    padding-bottom: 20px !important;
+}
+
+/* Adjust for tablets */
+@media (max-width: 991px) {
+    .view {
+        padding-top: 30px !important;
+    }
+}
+
+/* Adjust for mobile */
+@media (max-width: 768px) {
+    .view {
+        padding-top: 20px !important;
+    }
+}
+
+/* Adjust for very small phones */
+@media (max-width: 480px) {
+    .view {
+        padding-top: 16px !important;
+    }
+}
+
+/* Remove any existing margins from first elements that might add extra space */
+.view > :first-child {
+    margin-top: 0 !important;
+}
+
+/* All Time Stats Card */
+.all-time-stats {
+    background: linear-gradient(135deg, var(--gray-50) 0%, rgba(99, 102, 241, 0.05) 100%);
+    border: 1px solid var(--gray-200);
+}
+
+.all-time-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.all-time-item:last-child {
+    border-bottom: none;
+}
+
+.all-time-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--gray-600);
+}
+
+.all-time-value {
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.income-value {
+    color: #10b981;
+}
+
+.expense-value {
+    color: #ef4444;
+}
+
+.savings-value {
+    color: #3b82f6;
+}
+
+.net-value {
+    color: #8b5cf6;
+    font-size: 16px;
+}
+
+.all-time-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gray-400), transparent);
+    margin: 8px 0;
+}
+
+.all-time-item.total {
+    margin-top: 4px;
+    padding-top: 8px;
+}
+
+/* Dark mode adjustments */
+[data-theme="dark"] .all-time-stats {
+    background: linear-gradient(135deg, var(--gray-100) 0%, rgba(99, 102, 241, 0.1) 100%);
+}
+
+[data-theme="dark"] .all-time-label {
+    color: var(--gray-400);
+}
