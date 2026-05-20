@@ -8833,3 +8833,64 @@ body {
         padding-bottom: 20px !important;
     }
 }
+/* Category wrapper styles */
+.category-wrapper {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.category-type-icon {
+    font-size: 16px;
+    min-width: 24px;
+    text-align: center;
+}
+
+.category-type-icon.income {
+    color: #10b981;
+}
+
+.category-type-icon.expense {
+    color: #ef4444;
+}
+
+.category-type-icon.savings {
+    color: #3b82f6;
+}
+
+.category-info {
+    flex: 1;
+}
+
+/* Savings summary card */
+.summary-card.savings .summary-icon {
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
+}
+
+/* Savings amount styling */
+.amount.savings {
+    color: #3b82f6;
+}
+
+/* Savings rate stat card */
+.stat-card[onclick*="savings"] .stat-icon {
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
+}
+
+/* FORCE FIX - Desktop 4 columns */
+@media (min-width: 992px) {
+    .stats-grid {
+        display: grid !important;
+        grid-template-columns: repeat(4, 1fr) !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+    }
+    
+    .stat-card {
+        width: 100% !important;
+        margin: 0 !important;
+    }
+}
+
