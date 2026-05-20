@@ -412,7 +412,6 @@ function setupRealtimeSync() {
         return;
     }
 
-    // Remove existing listener if any
     if (unsubscribeRealtime) {
         unsubscribeRealtime();
         unsubscribeRealtime = null;
@@ -420,20 +419,18 @@ function setupRealtimeSync() {
 
     console.log('🔄 Setting up real-time sync for user:', window.currentUser.uid);
 
-    // Listen for real-time changes from Firebase
     unsubscribeRealtime = window.db.collection('users')
         .doc(window.currentUser.uid)
         .onSnapshot({
             includeMetadataChanges: true
         }, (doc) => {
-            if (isSyncing) return; // Prevent loops
+            if (isSyncing) return;
 
             if (doc.exists) {
                 const data = doc.data();
                 const serverTransactions = data.transactions || [];
                 const localTransactions = window.transactions || [];
 
-                // Check if data is different from local
                 const serverHash = JSON.stringify(serverTransactions);
                 const localHash = JSON.stringify(localTransactions);
 
@@ -441,7 +438,7 @@ function setupRealtimeSync() {
                     console.log('🔄 Real-time update detected! Syncing...');
                     isSyncing = true;
 
-                    // Update local data with server data
+                    // Update ALL data types
                     window.transactions = serverTransactions;
                     window.budgetLimit = data.monthlyBudget || window.budgetLimit;
                     window.debtGoal = data.debtGoal || window.debtGoal;
@@ -460,13 +457,19 @@ function setupRealtimeSync() {
                         lastSync: new Date().toISOString()
                     }));
 
-                    // Re-render UI
+                    // Re-render UI - THIS WILL UPDATE SAVINGS DISPLAY
                     if (typeof render === 'function') {
                         render();
                     }
+                    
+                    // Update all charts
+                    setTimeout(() => {
+                        if (typeof updateCategoryChart === 'function') updateCategoryChart();
+                        if (typeof updateTrendChart === 'function') updateTrendChart();
+                        if (typeof updateAnalytics === 'function') updateAnalytics();
+                    }, 100);
 
-                    // Show notification (optional)
-                    // showRealtimeNotification();
+                    showRealtimeNotification();
 
                     setTimeout(() => {
                         isSyncing = false;
@@ -597,7 +600,6 @@ async function saveToFirebase() {
     }
 }
 
-// Render functions
 function render() {
     const tbody = document.getElementById('tbody');
     const searchInput = document.getElementById('searchBar');
@@ -610,30 +612,29 @@ function render() {
 
     let totalIncome = 0, totalExpense = 0, totalSavings = 0, cashOnHand = 0;
     let debtPaid = 0, todaySpent = 0, weekSpent = 0, monthSpent = 0;
-    let monthIncome = 0, monthExpense = 0;
-    let expenseByCat = {}, incomeByCat = {};
+    let monthIncome = 0, monthExpense = 0, monthSavings = 0;
+    let expenseByCat = {}, incomeByCat = {}, savingsByCat = {};
 
     const today = new Date().toISOString().split('T')[0];
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const currentMonth = new Date().toISOString().slice(0, 7);
 
-    // Make sure window.transactions exists
     const transactions = window.transactions || [];
     const sortedTransactions = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    console.log('Rendering transactions:', transactions.length);
-
-    // Clear the filtered indices array
     window.filteredTransactionIds = [];
 
     sortedTransactions.forEach((t) => {
         const amount = t.amount || 0;
-        if (t.type === 'income') totalIncome += amount;
-        else if (t.type === 'expense') {
+        
+        if (t.type === 'income') {
+            totalIncome += amount;
+        } else if (t.type === 'expense') {
             totalExpense += amount;
             if (t.category?.toLowerCase().includes('debt')) debtPaid += amount;
+        } else if (t.type === 'savings') {
+            totalSavings += amount;
         }
-        else if (t.type === 'savings') totalSavings += amount;
 
         if (t.type === 'expense' && t.date === today) todaySpent += amount;
         if (t.type === 'expense' && t.date >= weekAgo) weekSpent += amount;
@@ -646,26 +647,29 @@ function render() {
             } else if (t.type === 'expense') {
                 monthExpense += amount;
                 expenseByCat[t.category] = (expenseByCat[t.category] || 0) + amount;
+            } else if (t.type === 'savings') {
+                monthSavings += amount;
+                savingsByCat[t.category] = (savingsByCat[t.category] || 0) + amount;
             }
         }
 
-        // FIXED SEARCH LOGIC
         const searchTerm = search.toLowerCase();
         const categoryMatch = t.category?.toLowerCase().includes(searchTerm);
         const noteMatch = t.note?.toLowerCase().includes(searchTerm);
         const matchesSearch = search === '' || categoryMatch || noteMatch;
-
         const matchesMonth = t.date?.startsWith(monthFilter) || monthFilter === '';
         const matchesType = typeFilter === 'all' || t.type === typeFilter;
 
         if (matchesSearch && matchesMonth && matchesType) {
-            // Store the transaction ID for edit/delete
             window.filteredTransactionIds.push(t.id);
 
+            // SIMPLE VERSION - NO ICONS
             tbody.innerHTML += `<tr onclick="openEditModalById('${t.id}')" style="cursor: pointer;">
                 <td class="category-cell">
-                    <span style="font-weight:600;">${t.category || '-'}</span>
-                    ${t.note ? `<span class="note">${escapeHtml(t.note)}</span>` : ''}
+                    <div class="category-info">
+                        <span style="font-weight:600;">${t.category || '-'}</span>
+                        ${t.note ? `<span class="note">${escapeHtml(t.note)}</span>` : ''}
+                    </div>
                 </td>
                 <td style="color: ${t.type === 'income' ? '#10b981' : t.type === 'savings' ? '#3b82f6' : '#ef4444'}; font-weight:600;">
                     ${formatCurrency(amount)}
@@ -685,11 +689,12 @@ function render() {
         }
     });
 
-    // Calculate totals for the current filtered view
-    let filteredTotalIncome = 0;
-    let filteredTotalExpense = 0;
-    let filteredTotalSavings = 0;
+    cashOnHand = totalIncome - totalExpense;
+    const netWorth = totalIncome + totalSavings - totalExpense;
+    const savingsRate = totalIncome > 0 ? ((totalSavings / totalIncome) * 100).toFixed(1) : 0;
 
+    // Filtered totals
+    let filteredTotalIncome = 0, filteredTotalExpense = 0, filteredTotalSavings = 0;
     sortedTransactions.forEach((t) => {
         const amount = t.amount || 0;
         const searchTerm = search.toLowerCase();
@@ -708,7 +713,7 @@ function render() {
 
     const filteredNet = filteredTotalIncome - filteredTotalExpense;
 
-    // Create or update summary bar
+    // Update summary bar
     let summaryBar = document.getElementById('transactionsSummary');
     if (!summaryBar) {
         summaryBar = document.createElement('div');
@@ -736,6 +741,13 @@ function render() {
                 <span class="summary-value" style="color: #ef4444;">${formatCurrency(filteredTotalExpense)}</span>
             </div>
         </div>
+        <div class="summary-card savings">
+            <div class="summary-icon"><i class="fas fa-piggy-bank"></i></div>
+            <div class="summary-info">
+                <span class="summary-label">Total Savings</span>
+                <span class="summary-value" style="color: #3b82f6;">${formatCurrency(filteredTotalSavings)}</span>
+            </div>
+        </div>
         <div class="summary-card net">
             <div class="summary-icon"><i class="fas fa-chart-line"></i></div>
             <div class="summary-info">
@@ -750,17 +762,19 @@ function render() {
 `;
 
     // Update UI elements
-    cashOnHand = totalIncome - totalExpense;
-    const remainingDebt = Math.max(window.debtGoal - debtPaid, 0);
-    const netWorth = (totalIncome + totalSavings) - (totalExpense + remainingDebt);
-
     document.getElementById('netWorthVal') && (document.getElementById('netWorthVal').innerText = formatCurrency(netWorth));
-    document.getElementById('netStatus') && (document.getElementById('netStatus').innerHTML = `<i class="fas fa-chart-line"></i> ${netWorth >= 0 ? 'Positive' : 'Debt Heavy'}`);
+    document.getElementById('netStatus') && (document.getElementById('netStatus').innerHTML = `<i class="fas fa-chart-line"></i> ${netWorth >= 0 ? 'Positive' : 'Debt Heavy'} | Saved: ${formatCurrency(totalSavings)}`);
     document.getElementById('spentToday') && (document.getElementById('spentToday').innerText = formatCurrency(todaySpent));
     document.getElementById('spent7Days') && (document.getElementById('spent7Days').innerText = formatCurrency(weekSpent));
     document.getElementById('spentMonth') && (document.getElementById('spentMonth').innerText = formatCurrency(monthSpent));
     document.getElementById('cashOnHand') && (document.getElementById('cashOnHand').innerText = formatCurrency(cashOnHand));
-    document.getElementById('balanceLabel') && (document.getElementById('balanceLabel').innerText = formatCurrency(monthIncome - monthExpense));
+    document.getElementById('balanceLabel') && (document.getElementById('balanceLabel').innerHTML = `<i class="fas fa-chart-line"></i> Net: ${formatCurrency(monthIncome - monthExpense)} | Saved: ${formatCurrency(monthSavings)}`);
+
+    // Update savings rate display
+    const savingsRateDisplay = document.getElementById('savingsRateDisplay');
+    if (savingsRateDisplay) {
+        savingsRateDisplay.innerText = `${savingsRate}%`;
+    }
 
     // Budget Progress Bar
     if (document.getElementById('budgetBar') && document.getElementById('budgetText')) {
@@ -793,15 +807,52 @@ function render() {
             const totalSavingsCalc = calculateTotalSavings();
             const percentage = Math.min((totalSavingsCalc / window.savingsGoal) * 100, 100);
             document.getElementById('savingsBar').style.width = percentage + '%';
-            document.getElementById('savingsVal').innerHTML = `${formatCurrency(totalSavingsCalc)} Saved`;
+            document.getElementById('savingsVal').innerHTML = `${formatCurrency(totalSavingsCalc)} Saved (${percentage.toFixed(1)}%)`;
         } else {
             document.getElementById('savingsBar').style.width = '0%';
-            document.getElementById('savingsVal').innerHTML = `No Savings Goal Set`;
+            document.getElementById('savingsVal').innerHTML = `No Savings Goal Set | Saved: ${formatCurrency(totalSavings)}`;
         }
     }
 
-    document.getElementById('expenseHistory') && (document.getElementById('expenseHistory').innerHTML = Object.entries(expenseByCat).map(([cat, amt]) => `<div class="breakdown-item"><span>${cat}</span><span class="amount negative">${formatCurrency(amt)}</span></div>`).join('') || '<div class="breakdown-item">No expenses</div>');
-    document.getElementById('incomeHistory') && (document.getElementById('incomeHistory').innerHTML = Object.entries(incomeByCat).map(([cat, amt]) => `<div class="breakdown-item"><span>${cat}</span><span class="amount positive">${formatCurrency(amt)}</span></div>`).join('') || '<div class="breakdown-item">No income</div>');
+    // Update breakdown sections
+    const expenseHistoryEl = document.getElementById('expenseHistory');
+    const incomeHistoryEl = document.getElementById('incomeHistory');
+    let savingsHistoryElement = document.getElementById('savingsHistory');
+
+    if (expenseHistoryEl) {
+        expenseHistoryEl.innerHTML = Object.entries(expenseByCat).map(([cat, amt]) => 
+            `<div class="breakdown-item"><span>${cat}</span><span class="amount negative">${formatCurrency(amt)}</span></div>`
+        ).join('') || '<div class="breakdown-item">No expenses this month</div>';
+    }
+    
+    if (incomeHistoryEl) {
+        incomeHistoryEl.innerHTML = Object.entries(incomeByCat).map(([cat, amt]) => 
+            `<div class="breakdown-item"><span>${cat}</span><span class="amount positive">${formatCurrency(amt)}</span></div>`
+        ).join('') || '<div class="breakdown-item">No income this month</div>';
+    }
+    
+    // Create savings history section if it doesn't exist
+    if (!savingsHistoryElement && document.querySelector('.overview-grid')) {
+        const overviewGrid = document.querySelector('.overview-grid');
+        const savingsCard = document.createElement('div');
+        savingsCard.className = 'overview-card';
+        savingsCard.innerHTML = `
+            <div class="card-header">
+                <h3><i class="fas fa-piggy-bank"></i> Savings Breakdown</h3>
+            </div>
+            <div class="card-body">
+                <div id="savingsHistory" style="max-height: 200px; overflow-y: auto;"></div>
+            </div>
+        `;
+        overviewGrid.appendChild(savingsCard);
+        savingsHistoryElement = document.getElementById('savingsHistory');
+    }
+    
+    if (savingsHistoryElement) {
+        savingsHistoryElement.innerHTML = Object.entries(savingsByCat).map(([cat, amt]) => 
+            `<div class="breakdown-item"><span>${cat}</span><span class="amount savings" style="color: #3b82f6; font-weight: 600;">${formatCurrency(amt)}</span></div>`
+        ).join('') || '<div class="breakdown-item">No savings this month</div>';
+    }
 
     renderGoals();
     renderBills();
@@ -1717,7 +1768,12 @@ function setTransactionType(type) {
 function updateModalCategories(type) {
     const select = document.getElementById('modalCategory');
     if (!select) return;
-    const categories = type === 'expense' ? expenseCats : type === 'income' ? incomeCats : savingsCats;
+
+    let categories = [];
+    if (type === 'expense') categories = expenseCats;
+    else if (type === 'income') categories = incomeCats;
+    else if (type === 'savings') categories = savingsCats;
+
     select.innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join('');
 }
 
@@ -7013,3 +7069,47 @@ document.addEventListener('DOMContentLoaded', function () {
     initBottomTabs();
     // ... rest of your initialization
 });
+
+// Add after your other transaction functions
+function saveTransactionOffline(transaction) {
+    // Always save to local array first
+    if (!window.transactions) window.transactions = [];
+
+    // Add to beginning of array
+    window.transactions.unshift(transaction);
+
+    // Save to localStorage immediately
+    if (window.currentUser) {
+        const backup = {
+            transactions: window.transactions,
+            budgetLimit: window.budgetLimit,
+            debtGoal: window.debtGoal,
+            savingsGoal: window.savingsGoal,
+            goals: window.goals,
+            bills: window.bills,
+            lastOfflineSave: new Date().toISOString(),
+            pendingSync: !navigator.onLine
+        };
+        localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify(backup));
+    }
+
+    // Also store in pending offline transactions
+    if (!navigator.onLine) {
+        let pending = JSON.parse(localStorage.getItem('pending_offline_tx') || '[]');
+        pending.push(transaction);
+        localStorage.setItem('pending_offline_tx', JSON.stringify(pending));
+        localStorage.setItem('pending_sync', 'true');
+    } else {
+        // Try to save to Firebase immediately
+        saveToFirebase();
+    }
+
+    // Update UI
+    if (typeof render === 'function') render();
+
+    // Update charts
+    setTimeout(() => {
+        if (typeof updateCategoryChart === 'function') updateCategoryChart();
+        if (typeof updateTrendChart === 'function') updateTrendChart();
+    }, 100);
+}

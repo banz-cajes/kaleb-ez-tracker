@@ -496,15 +496,3 @@ window.updateCategoryChart = window.updateCategoryChart || function () {
         }
     }
 };
-
-window.updateTrendChart = window.updateTrendChart || function () {
-    if (typeof window.updateTrendChartOriginal === 'function') {
-        window.updateTrendChartOriginal();
-    } else {
-        console.warn('updateTrendChart not available - using fallback');
-        const ctx = document.getElementById('trendChart');
-        if (ctx && window.trendChart) {
-            window.trendChart.update();
-        }
-    }
-};
