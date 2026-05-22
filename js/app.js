@@ -12,84 +12,12 @@ function renderTransactionsPaginated() {
 }
 
 
-// OFFLINE-FIRST ADDON - Add this to your existing app.js
-
-const OfflineManager = {
-    persistLocally() {
-        try {
-            localStorage.setItem('kaleb_offline_backup', JSON.stringify({
-                transactions: window.transactions || [],
-                budgetLimit: window.budgetLimit || 0,
-                debtGoal: window.debtGoal || 0,
-                savingsGoal: window.savingsGoal || 0,
-                goals: window.goals || [],
-                bills: window.bills || [],
-                currency: window.currentCurrency || 'PHP',
-                lastBackup: new Date().toISOString()
-            }));
-            return true;
-        } catch (e) { return false; }
-    },
-    restoreFromLocal() {
-        try {
-            const saved = localStorage.getItem('kaleb_offline_backup');
-            if (!saved) return false;
-            const data = JSON.parse(saved);
-            if (data.transactions) window.transactions = data.transactions;
-            if (data.budgetLimit !== undefined) window.budgetLimit = data.budgetLimit;
-            if (data.debtGoal !== undefined) window.debtGoal = data.debtGoal;
-            if (data.savingsGoal !== undefined) window.savingsGoal = data.savingsGoal;
-            if (data.goals) window.goals = data.goals;
-            if (data.bills) window.bills = data.bills;
-            if (data.currency) window.currentCurrency = data.currency;
-            return true;
-        } catch (e) { return false; }
-    }
-};
-
-// Override saveToFirebase to always save locally first
-const _originalSaveToFirebase = window.saveToFirebase;
-window.saveToFirebase = async function () {
-    OfflineManager.persistLocally();
-
-    if (!window.currentUser) {
-        if (typeof render === 'function') render();
-        return true;
-    }
-
-    if (!navigator.onLine) {
-        if (window.sileo) window.sileo.warning('Offline - saved locally', 'Offline');
-        if (typeof render === 'function') render();
-        return true;
-    }
-
-    if (_originalSaveToFirebase) {
-        return await _originalSaveToFirebase();
-    }
-    return false;
-};
-
-// Override loadUserData to try local backup if Firebase fails
-const _originalLoadUserData = window.loadUserData;
-window.loadUserData = async function () {
-    try {
-        if (_originalLoadUserData) {
-            await _originalLoadUserData();
-        }
-    } catch (error) {
-        console.log('Firebase failed, using local backup');
-        OfflineManager.restoreFromLocal();
-        if (typeof render === 'function') render();
-        if (window.sileo) window.sileo.warning('Using offline data', 'Offline Mode');
-    }
-};
 
 
 // Call this inside your existing DOMContentLoaded
 if (typeof document !== 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
         // Also backup data every 30 seconds
-        setInterval(() => { if (window.transactions) OfflineManager.persistLocally(); }, 30000);
     });
 }
 
@@ -143,12 +71,14 @@ window.debtGoal = 0;
 window.savingsGoal = 0;
 window.goals = [];
 window.bills = [];
+window.recurringTransactions = []; // NEW: Store recurring transaction templates
 window.currentUser = null;
 window.currentCurrency = 'PHP';
 
 let editIndex = -1;
 let editGoalIndex = -1;
 let editBillIndex = -1;
+let editRecurringIndex = -1;
 
 // ===== 30 EXPENSE CATEGORIES =====
 const expenseCats = [
@@ -306,7 +236,25 @@ async function loadUserData() {
     if (!window.currentUser) return;
 
     const loader = document.getElementById('loader');
-    if (loader) loader.style.display = 'flex';
+    
+    // Show skeleton loaders instead of full loader for better UX
+    const activeView = document.querySelector('.view.active');
+    if (activeView) {
+        const viewId = activeView.id;
+        if (viewId === 'dashboardView') {
+            showStatsSkeleton();
+            showOverviewSkeleton();
+        } else if (viewId === 'transactionsView') {
+            showTransactionsSkeleton();
+        } else if (viewId === 'goalsView') {
+            showGoalsSkeleton();
+        } else if (viewId === 'billsView') {
+            showBillsSkeleton();
+        }
+    }
+    
+    // Hide main loader
+    if (loader) loader.style.display = 'none';
 
     const db = window.db;
 
@@ -344,13 +292,16 @@ async function loadUserData() {
             bills: window.bills
         }));
 
-        // Load avatar from cloud
         await loadUserAvatar();
 
         if (typeof initializeApp === 'function') initializeApp();
+        
+        // Hide skeletons before rendering real content
+        hideAllSkeletons();
+        
         if (typeof render === 'function') render();
 
-        // ✅ ADD THIS - Update charts after data loads
+        // Update charts
         setTimeout(() => {
             if (typeof updateCategoryChart === 'function') {
                 console.log('Updating category chart after data load');
@@ -365,10 +316,12 @@ async function loadUserData() {
             }
         }, 500);
 
-        if (loader) loader.style.display = 'none';
-
     } catch (error) {
         console.error('Firestore error:', error);
+        
+        // Hide skeletons on error too
+        hideAllSkeletons();
+        
         const cached = localStorage.getItem('cajesData_' + window.currentUser.uid);
         if (cached) {
             try {
@@ -386,7 +339,6 @@ async function loadUserData() {
                 if (typeof initializeApp === 'function') initializeApp();
                 if (typeof render === 'function') render();
 
-                // ✅ ADD THIS - Update charts from cache too
                 setTimeout(() => {
                     if (typeof updateCategoryChart === 'function') {
                         updateCategoryChart();
@@ -397,7 +349,6 @@ async function loadUserData() {
                 }, 500);
             } catch (e) { console.log('Cache error', e); }
         }
-        if (loader) loader.style.display = 'none';
     }
 }
 
@@ -806,6 +757,10 @@ function deleteTransactionById(txId) {
         const index = window.transactions.findIndex(t => t.id === txId);
         if (index !== -1) {
             window.transactions.splice(index, 1);
+            // Immediately backup deletion to localStorage
+            if (window.UnifiedOfflineManager) {
+                window.UnifiedOfflineManager.backupToLocalStorage();
+            }
             saveToFirebase();
             render();
             if (window.sileo) window.sileo.success('Transaction deleted!', 'Deleted');
@@ -825,6 +780,10 @@ function deleteCurrentTransaction() {
 
     if (index !== -1 && confirm('Are you sure you want to delete this transaction?')) {
         window.transactions.splice(index, 1);
+        // Immediately backup deletion to localStorage
+        if (window.UnifiedOfflineManager) {
+            window.UnifiedOfflineManager.backupToLocalStorage();
+        }
         saveToFirebase();
         closeModal();
         render();
@@ -2649,6 +2608,18 @@ window.updatePassword = updatePassword;
 window.sendEmailVerification = sendEmailVerification;
 window.switchView = switchView;
 
+// Export recurring transactions functions
+window.createRecurringTransaction = createRecurringTransaction;
+window.saveRecurringTransaction = saveRecurringTransaction;
+window.deleteRecurringTransaction = deleteRecurringTransaction;
+window.deleteRecurringFromEdit = deleteRecurringFromEdit;
+window.editRecurringTransaction = editRecurringTransaction;
+window.closeRecurringModal = closeRecurringModal;
+window.renderRecurringTransactions = renderRecurringTransactions;
+window.processRecurringTransactions = processRecurringTransactions;
+window.createRecurringModal = createRecurringModal;
+
+
 // Add this function for edit modal categories
 function updateEditCategories() {
     const type = document.getElementById('mType').value;
@@ -4317,21 +4288,6 @@ window.render = render;
 window.switchView = switchView;
 window.deleteHousehold = deleteHousehold;
 
-// Add this to your console to test
-function testAddTransaction() {
-    const testTx = {
-        type: 'expense',
-        category: 'Test',
-        amount: 100,
-        date: new Date().toISOString().split('T')[0],
-        note: 'Test transaction',
-        createdAt: new Date().toISOString()
-    };
-    window.transactions.push(testTx);
-    console.log('Test transaction added:', window.transactions);
-    render();
-    saveToFirebase();
-}
 
 // ===== FIX FOR SEARCH FUNCTIONALITY =====
 // Make sure search is working properly
@@ -6243,713 +6199,10 @@ function archiveOldTransactions() {
 }
 
 
-// ===== OFFLINE SYNC FIX - MERGE DATA WHEN BACK ONLINE =====
+// ===== OFFLINE SYNC FIX - REMOVED - SEE UNIFIED OFFLINE MANAGER BELOW =====
+// OLD OFFLINE CODE REMOVED - Using UNIFIED OFFLINE MANAGER instead (see end of file)
 
-// Track pending changes that need to be synced
-let pendingTransactions = [];
-let pendingGoals = [];
-let pendingBills = [];
 
-// Track unsynced changes
-function trackUnsyncedChanges() {
-    if (!navigator.onLine) {
-        // Mark that we have pending changes
-        localStorage.setItem('pending_sync', 'true');
-        localStorage.setItem('pending_sync_time', Date.now().toString());
-    }
-}
-
-// Merge local offline data with Firebase data
-async function mergeLocalWithCloud() {
-    if (!window.currentUser) return false;
-
-    console.log('🔄 Merging offline data with cloud...');
-
-    try {
-        // Get current cloud data
-        const doc = await window.db.collection('users').doc(window.currentUser.uid).get();
-        const cloudData = doc.exists ? doc.data() : null;
-
-        // Get local backup
-        const localBackup = localStorage.getItem('cajesData_' + window.currentUser.uid);
-        if (!localBackup) return false;
-
-        const localData = JSON.parse(localBackup);
-
-        // Check if there's actually pending data to merge
-        const hasPendingData = localStorage.getItem('pending_sync') === 'true';
-        if (!hasPendingData) return false;
-
-        console.log('Local transactions:', localData.transactions?.length || 0);
-        console.log('Cloud transactions:', cloudData?.transactions?.length || 0);
-
-        // MERGE STRATEGY: Keep all transactions, remove duplicates by ID
-        let mergedTransactions = [...(cloudData?.transactions || [])];
-        let localTransactions = localData.transactions || [];
-
-        // Add local transactions that don't exist in cloud (by ID)
-        localTransactions.forEach(localTx => {
-            const exists = mergedTransactions.some(cloudTx => cloudTx.id === localTx.id);
-            if (!exists && localTx.id) {
-                console.log('➕ Adding missing transaction:', localTx.id);
-                mergedTransactions.unshift(localTx); // Add to beginning
-            }
-        });
-
-        // Also check for transactions without IDs (old format)
-        localTransactions.forEach(localTx => {
-            if (!localTx.id) {
-                // Generate ID for old transactions
-                localTx.id = Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9);
-                mergedTransactions.unshift(localTx);
-                console.log('➕ Added old transaction with new ID');
-            }
-        });
-
-        // Remove duplicate transactions (by id)
-        const uniqueTransactions = [];
-        const seenIds = new Set();
-        mergedTransactions.forEach(tx => {
-            if (tx.id && !seenIds.has(tx.id)) {
-                seenIds.add(tx.id);
-                uniqueTransactions.push(tx);
-            } else if (!tx.id) {
-                // Give it an ID if missing
-                tx.id = Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9);
-                uniqueTransactions.push(tx);
-            }
-        });
-
-        // Merge Goals
-        let mergedGoals = [...(cloudData?.goals || [])];
-        let localGoals = localData.goals || [];
-        localGoals.forEach(localGoal => {
-            const exists = mergedGoals.some(cloudGoal =>
-                cloudGoal.name === localGoal.name &&
-                cloudGoal.target === localGoal.target
-            );
-            if (!exists) {
-                mergedGoals.push(localGoal);
-            }
-        });
-
-        // Merge Bills
-        let mergedBills = [...(cloudData?.bills || [])];
-        let localBills = localData.bills || [];
-        localBills.forEach(localBill => {
-            const exists = mergedBills.some(cloudBill =>
-                cloudBill.name === localBill.name &&
-                cloudBill.dueDate === localBill.dueDate
-            );
-            if (!exists) {
-                mergedBills.push(localBill);
-            }
-        });
-
-        // Update settings (keep the highest values for budget limits)
-        const mergedBudgetLimit = Math.max(
-            cloudData?.monthlyBudget || 0,
-            localData.budgetLimit || 0
-        );
-
-        const mergedDebtGoal = Math.max(
-            cloudData?.debtGoal || 0,
-            localData.debtGoal || 0
-        );
-
-        const mergedSavingsGoal = Math.max(
-            cloudData?.savingsGoal || 0,
-            localData.savingsGoal || 0
-        );
-
-        // Prepare final data to save
-        const finalData = {
-            transactions: uniqueTransactions,
-            goals: mergedGoals,
-            bills: mergedBills,
-            monthlyBudget: mergedBudgetLimit,
-            debtGoal: mergedDebtGoal,
-            savingsGoal: mergedSavingsGoal,
-            lastSync: firebase.firestore.FieldValue.serverTimestamp(),
-            lastMerged: new Date().toISOString()
-        };
-
-        console.log(`📊 Merge summary: ${uniqueTransactions.length} total transactions`);
-        console.log(`   - ${localTransactions.length} from local`);
-        console.log(`   - ${cloudData?.transactions?.length || 0} from cloud`);
-
-        // Save merged data to Firebase
-        await window.db.collection('users').doc(window.currentUser.uid).set(finalData, { merge: true });
-
-        // Update local data
-        window.transactions = uniqueTransactions;
-        window.goals = mergedGoals;
-        window.bills = mergedBills;
-        window.budgetLimit = mergedBudgetLimit;
-        window.debtGoal = mergedDebtGoal;
-        window.savingsGoal = mergedSavingsGoal;
-
-        // Update local storage
-        localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
-            transactions: window.transactions,
-            budgetLimit: window.budgetLimit,
-            debtGoal: window.debtGoal,
-            savingsGoal: window.savingsGoal,
-            goals: window.goals,
-            bills: window.bills,
-            lastSync: new Date().toISOString()
-        }));
-
-        // Clear pending flag
-        localStorage.removeItem('pending_sync');
-
-        // Re-render UI
-        if (typeof render === 'function') render();
-
-        if (window.sileo) {
-            window.sileo.success(`✅ Synced ${localTransactions.length} offline transactions!`, 'Sync Complete');
-        }
-
-        return true;
-
-    } catch (error) {
-        console.error('Merge error:', error);
-        return false;
-    }
-}
-
-// Override saveToFirebase to track pending changes
-const originalSaveToFirebase = window.saveToFirebase;
-window.saveToFirebase = async function () {
-    // Always save locally first
-    if (window.currentUser) {
-        localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
-            transactions: window.transactions,
-            budgetLimit: window.budgetLimit,
-            debtGoal: window.debtGoal,
-            savingsGoal: window.savingsGoal,
-            goals: window.goals,
-            bills: window.bills,
-            lastBackup: new Date().toISOString()
-        }));
-    }
-
-    // If offline, mark pending sync
-    if (!navigator.onLine) {
-        localStorage.setItem('pending_sync', 'true');
-        localStorage.setItem('pending_sync_time', Date.now().toString());
-        console.log('📝 Offline - data saved locally, pending sync');
-        if (window.sileo) {
-            window.sileo.warning('Saved locally. Will sync when online.', 'Offline Mode');
-        }
-        if (typeof render === 'function') render();
-        return true;
-    }
-
-    // Online - try to save to Firebase
-    try {
-        if (window.currentUser && window.db) {
-            const dataToSave = {
-                transactions: window.transactions,
-                monthlyBudget: window.budgetLimit,
-                debtGoal: window.debtGoal,
-                savingsGoal: window.savingsGoal,
-                goals: window.goals,
-                bills: window.bills,
-                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
-            };
-
-            await window.db.collection('users').doc(window.currentUser.uid).set(dataToSave, { merge: true });
-            console.log('✅ Data saved to Firebase');
-
-            // Clear pending flag after successful save
-            localStorage.removeItem('pending_sync');
-
-            return true;
-        }
-    } catch (error) {
-        console.error('Save error:', error);
-        // If save fails, mark for later sync
-        localStorage.setItem('pending_sync', 'true');
-        return false;
-    }
-};
-
-// Enhanced online event handler
-function initOnlineSync() {
-    // Enhanced online/offline detection
-    window.addEventListener('online', async () => {
-        console.log('🌐 Connection restored');
-        const offlineIndicator = document.getElementById('offlineIndicator');
-        if (offlineIndicator) offlineIndicator.style.display = 'none';
-
-        // Check for pending data
-        const pendingSync = localStorage.getItem('pending_sync');
-        if (pendingSync === 'true') {
-            console.log('📦 Pending data found, syncing...');
-
-            // Show toast
-            if (window.sileo) {
-                window.sileo.info('Syncing offline data...', 'Back Online');
-            }
-
-            // Force a merge
-            if (typeof mergeLocalWithCloud === 'function') {
-                await mergeLocalWithCloud();
-            } else if (typeof window.saveToFirebase === 'function') {
-                await window.saveToFirebase();
-            }
-
-            // Refresh display
-            if (typeof render === 'function') render();
-        }
-    });
-
-    // Also check on page load if we're online and have pending data
-    if (navigator.onLine) {
-        const pendingSync = localStorage.getItem('pending_sync');
-        if (pendingSync === 'true') {
-            console.log('📡 Pending sync detected on load, merging...');
-            setTimeout(() => mergeLocalWithCloud(), 2000);
-        }
-    }
-}
-
-// Call this in your DOMContentLoaded or initializeApp
-function initOfflineMerge() {
-    initOnlineSync();
-
-    // Auto-save every 30 seconds (for offline data)
-    setInterval(() => {
-        if (window.transactions && window.transactions.length > 0) {
-            if (window.currentUser) {
-                localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
-                    transactions: window.transactions,
-                    budgetLimit: window.budgetLimit,
-                    debtGoal: window.debtGoal,
-                    savingsGoal: window.savingsGoal,
-                    goals: window.goals,
-                    bills: window.bills,
-                    lastAutoSave: new Date().toISOString()
-                }));
-
-                // If we're online and have pending sync, try to sync
-                if (navigator.onLine && localStorage.getItem('pending_sync') === 'true') {
-                    console.log('🔄 Auto-sync triggered');
-                    mergeLocalWithCloud();
-                }
-            }
-        }
-    }, 30000);
-}
-
-// Make sure this runs
-if (typeof document !== 'undefined') {
-    document.addEventListener('DOMContentLoaded', function () {
-        initOfflineMerge();
-    });
-}
-
-
-// ===== OFFLINE DATA PERSISTENCE FIX (CORRECTED) =====
-
-// Store pending transactions that haven't been synced
-let pendingOfflineTransactions = [];
-
-// Save transaction with offline support
-function saveTransactionOffline(transaction) {
-    // Always save to local array first
-    if (!window.transactions) window.transactions = [];
-    window.transactions.unshift(transaction);
-
-    // Save to localStorage immediately
-    if (window.currentUser) {
-        const backup = {
-            transactions: window.transactions,
-            budgetLimit: window.budgetLimit,
-            debtGoal: window.debtGoal,
-            savingsGoal: window.savingsGoal,
-            goals: window.goals,
-            bills: window.bills,
-            lastOfflineSave: new Date().toISOString(),
-            pendingSync: !navigator.onLine
-        };
-        localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify(backup));
-    }
-
-
-    // Update UI
-    if (typeof render === 'function') render();
-}
-
-// Sync pending offline transactions when coming back online
-async function syncOfflineTransactions() {
-    console.log('🔄 Checking for pending offline transactions...');
-
-    // Get pending transactions from localStorage FIRST
-    let pendingTx = [];
-    const storedPending = localStorage.getItem('pending_offline_tx');
-    if (storedPending) {
-        try {
-            pendingTx = JSON.parse(storedPending);
-        } catch (e) {
-            console.error('Error parsing pending transactions:', e);
-            pendingTx = [];
-        }
-    }
-
-    // Also check if we have unsynced data in main storage
-    const pendingFlag = localStorage.getItem('pending_sync');
-    const hasPendingData = pendingFlag === 'true' || pendingTx.length > 0;
-
-    if (!hasPendingData) {
-        console.log('✅ No pending transactions to sync');
-        return;
-    }
-
-    console.log(`📦 Found ${pendingTx.length} pending transactions to sync`);
-
-    if (window.sileo) {
-        window.sileo.info(`Syncing ${pendingTx.length} offline transactions...`, 'Back Online');
-    }
-
-    try {
-        // Get current Firebase data
-        const doc = await window.db.collection('users').doc(window.currentUser.uid).get();
-        let cloudTransactions = doc.exists ? (doc.data().transactions || []) : [];
-
-        // Create a Set of existing transaction IDs for quick lookup
-        const existingIds = new Set(cloudTransactions.map(tx => tx.id));
-
-        // Add only transactions that don't already exist in cloud
-        let addedCount = 0;
-        for (const pendingTxItem of pendingTx) {
-            if (pendingTxItem.id && !existingIds.has(pendingTxItem.id)) {
-                cloudTransactions.unshift(pendingTxItem);
-                addedCount++;
-                console.log(`➕ Syncing offline transaction: ${pendingTxItem.id}`);
-            }
-        }
-
-        // Also check main window.transactions for any missing ones
-        if (window.transactions && window.transactions.length > 0) {
-            for (const tx of window.transactions) {
-                if (tx.id && !existingIds.has(tx.id)) {
-                    // Check if already in pending list
-                    const alreadyPending = pendingTx.some(p => p.id === tx.id);
-                    if (!alreadyPending) {
-                        cloudTransactions.unshift(tx);
-                        addedCount++;
-                        console.log(`➕ Syncing missing transaction from memory: ${tx.id}`);
-                    }
-                }
-            }
-        }
-
-        if (addedCount > 0) {
-            // Save merged data back to Firebase
-            await window.db.collection('users').doc(window.currentUser.uid).set({
-                transactions: cloudTransactions,
-                monthlyBudget: window.budgetLimit,
-                debtGoal: window.debtGoal,
-                savingsGoal: window.savingsGoal,
-                goals: window.goals,
-                bills: window.bills,
-                lastSynced: firebase.firestore.FieldValue.serverTimestamp()
-            }, { merge: true });
-
-            // Update local window.transactions with merged data
-            window.transactions = cloudTransactions;
-
-            // Save to localStorage
-            localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
-                transactions: window.transactions,
-                budgetLimit: window.budgetLimit,
-                debtGoal: window.debtGoal,
-                savingsGoal: window.savingsGoal,
-                goals: window.goals,
-                bills: window.bills,
-                lastSync: new Date().toISOString()
-            }));
-
-            console.log(`✅ Successfully synced ${addedCount} offline transactions!`);
-
-            if (window.sileo) {
-                window.sileo.success(`✅ ${addedCount} offline transaction${addedCount > 1 ? 's' : ''} synced!`, 'Sync Complete');
-            }
-        } else {
-            console.log('No new transactions to sync');
-        }
-
-        // Clear pending data
-        localStorage.removeItem('pending_offline_tx');
-        localStorage.removeItem('pending_sync');
-        pendingOfflineTransactions = [];
-
-        // Refresh UI
-        if (typeof render === 'function') render();
-        if (typeof updateCategoryChart === 'function') updateCategoryChart();
-        if (typeof updateTrendChart === 'function') updateTrendChart();
-
-    } catch (error) {
-        console.error('Sync error:', error);
-        if (window.sileo) {
-            window.sileo.warning('Could not sync all data. Will retry later.', 'Sync Pending');
-        }
-    }
-}
-
-// Override saveNewTransaction to use offline-safe version
-const originalSaveNewTransaction = window.saveNewTransaction;
-window.saveNewTransaction = function () {
-    const type = document.querySelector('#addTransactionModal .type-btn.active')?.dataset.type || 'expense';
-    const category = document.getElementById('modalCategory').value;
-    let amount = parseFloat(document.getElementById('modalAmount').value);
-    const date = document.getElementById('modalDate').value;
-    const note = document.getElementById('modalNote').value;
-
-    if (!category) {
-        if (window.sileo) window.sileo.error('Please select a category', 'Error');
-        return;
-    }
-    if (isNaN(amount) || amount <= 0) {
-        if (window.sileo) window.sileo.error('Please enter a valid amount greater than 0', 'Error');
-        return;
-    }
-    if (!date) {
-        if (window.sileo) window.sileo.error('Please select a date', 'Error');
-        return;
-    }
-
-    // Generate unique ID
-    const transaction = {
-        id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9),
-        type,
-        category,
-        amount,
-        date,
-        note: note || '',
-        createdAt: new Date().toISOString(),
-        synced: navigator.onLine
-    };
-
-    // Use offline-safe save
-    saveTransactionOffline(transaction);
-
-    // Close modal
-    closeAddTransactionModal();
-
-    // Clear form
-    document.getElementById('modalAmount').value = '';
-    document.getElementById('modalNote').value = '';
-
-    // Show appropriate message
-    if (!navigator.onLine) {
-        if (window.sileo) {
-            window.sileo.success('Transaction saved offline! Will appear when back online.', 'Offline Save');
-        }
-    } else {
-        if (window.sileo) {
-            window.sileo.success(`${type === 'expense' ? 'Expense' : type === 'income' ? 'Income' : 'Savings'} added!`, 'Success');
-        }
-    }
-};
-
-// Listen for online/offline events
-window.addEventListener('online', async () => {
-    console.log('🌐 Back online! Syncing offline data...');
-
-    // Show indicator
-    const indicator = document.getElementById('offlineSyncIndicator');
-    if (indicator) {
-        indicator.style.display = 'flex';
-        indicator.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Syncing offline data...';
-        setTimeout(() => {
-            indicator.style.display = 'none';
-        }, 3000);
-    }
-
-    // Sync pending transactions
-    await syncOfflineTransactions();
-
-    // Also try regular save
-    if (typeof saveToFirebase === 'function') {
-        await saveToFirebase();
-    }
-
-    // Refresh everything
-    if (typeof render === 'function') render();
-    if (typeof updateCategoryChart === 'function') updateCategoryChart();
-    if (typeof updateTrendChart === 'function') updateTrendChart();
-});
-
-window.addEventListener('offline', () => {
-    console.log('📴 Offline mode - transactions will be saved locally');
-    if (window.sileo) {
-        window.sileo.info('Offline mode: Your data will sync when you reconnect.', 'Offline Mode');
-    }
-});
-
-// Create sync indicator (small badge)
-function createSyncIndicator() {
-    if (document.getElementById('offlineSyncIndicator')) return;
-
-    const indicator = document.createElement('div');
-    indicator.id = 'offlineSyncIndicator';
-    indicator.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        background: var(--primary, #6366f1);
-        color: white;
-        padding: 8px 16px;
-        border-radius: 40px;
-        font-size: 12px;
-        font-weight: 600;
-        z-index: 10000;
-        display: none;
-        align-items: center;
-        gap: 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    `;
-    indicator.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Syncing...';
-    document.body.appendChild(indicator);
-}
-
-// Call this on page load
-function initOfflineSync() {
-    createSyncIndicator();
-
-    // Check for pending data on load
-    setTimeout(() => {
-        if (navigator.onLine) {
-            const pendingFlag = localStorage.getItem('pending_sync');
-            const pendingTx = localStorage.getItem('pending_offline_tx');
-            if (pendingFlag === 'true' || pendingTx) {
-                console.log('📦 Pending data found on load, syncing...');
-                syncOfflineTransactions();
-            }
-        }
-    }, 2000);
-}
-
-// Also override loadUserData to preserve offline data
-const originalLoadUserData = window.loadUserData;
-window.loadUserData = async function () {
-    if (!window.currentUser) return;
-
-    // First, try to load from localStorage (offline cache)
-    const cached = localStorage.getItem('cajesData_' + window.currentUser.uid);
-    let hasLocalData = false;
-
-    if (cached) {
-        try {
-            const data = JSON.parse(cached);
-            if (data.transactions && data.transactions.length > 0) {
-                window.transactions = data.transactions;
-                window.budgetLimit = data.budgetLimit || 0;
-                window.debtGoal = data.debtGoal || 0;
-                window.savingsGoal = data.savingsGoal || 0;
-                window.goals = data.goals || [];
-                window.bills = data.bills || [];
-                hasLocalData = true;
-                console.log(`📱 Loaded ${window.transactions.length} transactions from offline cache`);
-
-                // Show UI immediately from cache
-                if (typeof render === 'function') render();
-            }
-        } catch (e) {
-            console.log('Cache read error:', e);
-        }
-    }
-
-    // Then try to sync with Firebase if online
-    if (navigator.onLine) {
-        try {
-            const doc = await window.db.collection('users').doc(window.currentUser.uid).get();
-            if (doc.exists) {
-                const data = doc.data();
-                const cloudTransactions = data.transactions || [];
-
-                // MERGE: Keep local transactions that don't exist in cloud
-                if (hasLocalData && window.transactions.length > 0) {
-                    const cloudIds = new Set(cloudTransactions.map(tx => tx.id));
-                    const uniqueLocalTx = window.transactions.filter(tx => tx.id && !cloudIds.has(tx.id));
-
-                    if (uniqueLocalTx.length > 0) {
-                        console.log(`🔄 Merging ${uniqueLocalTx.length} local transactions with cloud`);
-                        window.transactions = [...uniqueLocalTx, ...cloudTransactions];
-
-                        // Save merged data back to Firebase
-                        await window.db.collection('users').doc(window.currentUser.uid).set({
-                            transactions: window.transactions,
-                            monthlyBudget: window.budgetLimit,
-                            debtGoal: window.debtGoal,
-                            savingsGoal: window.savingsGoal,
-                            goals: window.goals,
-                            bills: window.bills,
-                            lastMerged: firebase.firestore.FieldValue.serverTimestamp()
-                        }, { merge: true });
-
-                        if (window.sileo) {
-                            window.sileo.success(`Merged ${uniqueLocalTx.length} offline transactions!`, 'Sync Complete');
-                        }
-                    }
-                } else if (!hasLocalData || window.transactions.length === 0) {
-                    // No local data, just use cloud
-                    window.transactions = cloudTransactions;
-                    window.budgetLimit = data.monthlyBudget || 0;
-                    window.debtGoal = data.debtGoal || 0;
-                    window.savingsGoal = data.savingsGoal || 0;
-                    window.goals = data.goals || [];
-                    window.bills = data.bills || [];
-                }
-            }
-
-            // Save merged data to cache
-            localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
-                transactions: window.transactions,
-                budgetLimit: window.budgetLimit,
-                debtGoal: window.debtGoal,
-                savingsGoal: window.savingsGoal,
-                goals: window.goals,
-                bills: window.bills,
-                lastSync: new Date().toISOString()
-            }));
-
-            console.log(`✅ Final: ${window.transactions.length} total transactions`);
-
-        } catch (error) {
-            console.error('Firebase load error:', error);
-            // Already have local data, continue using it
-        }
-    }
-
-    // Load avatar
-    if (typeof loadUserAvatar === 'function') await loadUserAvatar();
-
-    // Initialize app and render
-    if (typeof initializeApp === 'function') initializeApp();
-    if (typeof render === 'function') render();
-
-    // Update charts
-    setTimeout(() => {
-        if (typeof updateCategoryChart === 'function') updateCategoryChart();
-        if (typeof updateTrendChart === 'function') updateTrendChart();
-    }, 500);
-};
-
-// Initialize
-document.addEventListener('DOMContentLoaded', function () {
-    initOfflineSync();
-});
-
-console.log('✅ Offline data persistence fix loaded - your data will NEVER disappear!');
-
-// Dummy function to prevent error
-function initOfflineStatus() {
-    console.log('initOfflineStatus called but disabled');
-}
 
 // ===== BOTTOM TAB BAR INITIALIZATION =====
 function initBottomTabs() {
@@ -6999,6 +6252,11 @@ function switchView(viewName) {
     if (viewName === 'household' && typeof loadHousehold === 'function') {
         setTimeout(() => loadHousehold(), 100);
     }
+
+    if (viewName === 'bills' && typeof renderRecurringTransactions === 'function') {
+        console.log('📋 Bills view activated, rendering recurring transactions');
+        setTimeout(() => renderRecurringTransactions(), 150);
+    }
 }
 
 // Call in DOMContentLoaded
@@ -7007,47 +6265,1125 @@ document.addEventListener('DOMContentLoaded', function () {
     // ... rest of your initialization
 });
 
-// Add after your other transaction functions
-function saveTransactionOffline(transaction) {
-    // Always save to local array first
-    if (!window.transactions) window.transactions = [];
+// ===== RECURRING TRANSACTIONS FEATURE =====
 
-    // Add to beginning of array
-    window.transactions.unshift(transaction);
-
-    // Save to localStorage immediately
-    if (window.currentUser) {
-        const backup = {
-            transactions: window.transactions,
-            budgetLimit: window.budgetLimit,
-            debtGoal: window.debtGoal,
-            savingsGoal: window.savingsGoal,
-            goals: window.goals,
-            bills: window.bills,
-            lastOfflineSave: new Date().toISOString(),
-            pendingSync: !navigator.onLine
-        };
-        localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify(backup));
-    }
-
-    // Also store in pending offline transactions
-    if (!navigator.onLine) {
-        let pending = JSON.parse(localStorage.getItem('pending_offline_tx') || '[]');
-        pending.push(transaction);
-        localStorage.setItem('pending_offline_tx', JSON.stringify(pending));
-        localStorage.setItem('pending_sync', 'true');
-    } else {
-        // Try to save to Firebase immediately
-        saveToFirebase();
-    }
-
-    // Update UI
-    if (typeof render === 'function') render();
-
-    // Update charts
-    setTimeout(() => {
-        if (typeof updateCategoryChart === 'function') updateCategoryChart();
-        if (typeof updateTrendChart === 'function') updateTrendChart();
-    }, 100);
+/**
+ * Create a new recurring transaction template
+ */
+// Create recurring modal (enhanced)
+function createRecurringTransaction() {
+    window.editRecurringIndex = -1;
+    
+    // Reset form
+    document.getElementById('recurringName').value = '';
+    document.getElementById('recurringAmount').value = '';
+    document.getElementById('recurringType').value = 'expense';
+    document.getElementById('recurringFrequency').value = 'monthly';
+    document.getElementById('recurringDayOfMonth').value = '1';
+    document.getElementById('recurringActive').checked = true;
+    
+    // Update categories based on type
+    updateRecurringCategories();
+    
+    // Update modal title and hide delete button
+    document.getElementById('recurringModalTitle').innerHTML = '<i class="fas fa-plus"></i> Add Recurring Transaction';
+    document.getElementById('recurringDeleteBtn').style.display = 'none';
+    
+    // Show modal
+    document.getElementById('recurringModal').classList.add('active');
 }
 
+// Close recurring modal
+function closeRecurringModal() {
+    document.getElementById('recurringModal').classList.remove('active');
+    window.editRecurringIndex = -1;
+}
+
+// Update categories based on selected type
+function updateRecurringCategories() {
+    const type = document.getElementById('recurringType').value;
+    const categorySelect = document.getElementById('recurringCategory');
+    let categories = [];
+    
+    if (type === 'expense') categories = expenseCats;
+    else if (type === 'income') categories = incomeCats;
+    else categories = savingsCats;
+    
+    categorySelect.innerHTML = categories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
+}
+
+// Edit recurring transaction
+function editRecurringTransaction(index) {
+    window.editRecurringIndex = index;
+    const recurring = window.recurringTransactions[index];
+    
+    if (!recurring) return;
+    
+    // Populate form
+    document.getElementById('recurringName').value = recurring.name;
+    document.getElementById('recurringAmount').value = recurring.amount;
+    document.getElementById('recurringType').value = recurring.type;
+    document.getElementById('recurringFrequency').value = recurring.frequency;
+    document.getElementById('recurringDayOfMonth').value = recurring.dayOfMonth;
+    document.getElementById('recurringActive').checked = recurring.isActive;
+    
+    // Update categories and set the value
+    updateRecurringCategories();
+    document.getElementById('recurringCategory').value = recurring.category;
+    
+    // Update modal title and show delete button
+    document.getElementById('recurringModalTitle').innerHTML = '<i class="fas fa-edit"></i> Edit Recurring Transaction';
+    document.getElementById('recurringDeleteBtn').style.display = 'block';
+    
+    // Show modal
+    document.getElementById('recurringModal').classList.add('active');
+}
+
+// Save recurring transaction (enhanced)
+function saveRecurringTransaction() {
+    const name = document.getElementById('recurringName').value.trim();
+    const amount = parseFloat(document.getElementById('recurringAmount').value);
+    const type = document.getElementById('recurringType').value;
+    const category = document.getElementById('recurringCategory').value;
+    const frequency = document.getElementById('recurringFrequency').value;
+    const dayOfMonth = parseInt(document.getElementById('recurringDayOfMonth').value);
+    const isActive = document.getElementById('recurringActive').checked;
+    
+    if (!name) {
+        if (window.sileo) window.sileo.error('Please enter a transaction name', 'Error');
+        return;
+    }
+    
+    if (isNaN(amount) || amount <= 0) {
+        if (window.sileo) window.sileo.error('Please enter a valid amount', 'Error');
+        return;
+    }
+    
+    if (!category) {
+        if (window.sileo) window.sileo.error('Please select a category', 'Error');
+        return;
+    }
+    
+    const recurring = {
+        id: `recurring_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        name,
+        amount,
+        category,
+        type,
+        frequency,
+        dayOfMonth,
+        isActive,
+        createdAt: new Date().toISOString(),
+        lastGenerated: null
+    };
+    
+    if (window.editRecurringIndex === -1) {
+        if (!window.recurringTransactions) window.recurringTransactions = [];
+        window.recurringTransactions.push(recurring);
+        if (window.sileo) window.sileo.success('✅ Recurring transaction created!', 'Success');
+    } else {
+        recurring.id = window.recurringTransactions[window.editRecurringIndex].id;
+        recurring.createdAt = window.recurringTransactions[window.editRecurringIndex].createdAt;
+        window.recurringTransactions[window.editRecurringIndex] = recurring;
+        if (window.sileo) window.sileo.success('✅ Recurring transaction updated!', 'Success');
+    }
+    
+    saveToFirebase();
+    closeRecurringModal();
+    renderRecurringTransactions();
+}
+
+// Delete recurring from edit modal
+function deleteRecurringFromEdit() {
+    if (window.editRecurringIndex === -1) return;
+    
+    if (confirm('Delete this recurring transaction template? This cannot be undone.')) {
+        window.recurringTransactions.splice(window.editRecurringIndex, 1);
+        saveToFirebase();
+        closeRecurringModal();
+        renderRecurringTransactions();
+        if (window.sileo) window.sileo.success('Recurring transaction deleted!', 'Deleted');
+    }
+}
+
+// Delete recurring transaction
+function deleteRecurringTransaction(index) {
+    if (confirm('Delete this recurring transaction? This cannot be undone.')) {
+        window.recurringTransactions.splice(index, 1);
+        saveToFirebase();
+        renderRecurringTransactions();
+        if (window.sileo) window.sileo.success('Recurring transaction deleted!', 'Deleted');
+    }
+}
+
+// Add event listener for type change
+document.addEventListener('DOMContentLoaded', function() {
+    const recurringType = document.getElementById('recurringType');
+    if (recurringType) {
+        recurringType.addEventListener('change', updateRecurringCategories);
+    }
+});
+
+/**
+ * Save recurring transaction template
+ */
+function saveRecurringTransaction() {
+    const name = document.getElementById('recurringName')?.value || '';
+    const amount = parseFloat(document.getElementById('recurringAmount')?.value || 0);
+    const category = document.getElementById('recurringCategory')?.value || '';
+    const type = document.getElementById('recurringType')?.value || 'expense';
+    const frequency = document.getElementById('recurringFrequency')?.value || 'monthly';
+    const dayOfMonth = parseInt(document.getElementById('recurringDayOfMonth')?.value || 1);
+    const isActive = document.getElementById('recurringActive')?.checked || true;
+
+    if (!name || !category || amount <= 0) {
+        if (window.sileo) window.sileo.error('Please fill all required fields', 'Error');
+        return;
+    }
+
+    const recurring = {
+        id: `recurring_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        name,
+        amount,
+        category,
+        type,
+        frequency,
+        dayOfMonth,
+        isActive,
+        createdAt: new Date().toISOString(),
+        lastGenerated: null
+    };
+
+    if (editRecurringIndex === -1) {
+        window.recurringTransactions.push(recurring);
+        if (window.sileo) window.sileo.success('✅ Recurring transaction created!', 'Success');
+    } else {
+        recurring.id = window.recurringTransactions[editRecurringIndex].id;
+        recurring.createdAt = window.recurringTransactions[editRecurringIndex].createdAt;
+        window.recurringTransactions[editRecurringIndex] = recurring;
+        if (window.sileo) window.sileo.success('✅ Recurring transaction updated!', 'Success');
+    }
+
+    saveToFirebase();
+    closeRecurringModal();
+    renderRecurringTransactions();
+}
+
+/**
+ * Delete recurring transaction template
+ */
+function deleteRecurringTransaction(index) {
+    if (confirm('Delete this recurring transaction template?')) {
+        window.recurringTransactions.splice(index, 1);
+        saveToFirebase();
+        renderRecurringTransactions();
+        if (window.sileo) window.sileo.success('Recurring transaction deleted!', 'Deleted');
+    }
+}
+
+/**
+ * Edit recurring transaction
+ */
+function editRecurringTransaction(index) {
+    editRecurringIndex = index;
+    const recurring = window.recurringTransactions[index];
+    
+    document.getElementById('recurringName').value = recurring.name;
+    document.getElementById('recurringAmount').value = recurring.amount;
+    document.getElementById('recurringCategory').value = recurring.category;
+    document.getElementById('recurringType').value = recurring.type;
+    document.getElementById('recurringFrequency').value = recurring.frequency;
+    document.getElementById('recurringDayOfMonth').value = recurring.dayOfMonth;
+    document.getElementById('recurringActive').checked = recurring.isActive;
+    
+    // Update form title and add edit indicator
+    const titleEl = document.getElementById('recurringModalTitle');
+    if (titleEl) titleEl.textContent = `Edit Recurring Transaction`;
+    
+    // Show edit status indicator
+    const statusEl = document.getElementById('recurringFormStatus');
+    if (statusEl) {
+        statusEl.className = 'form-status edit-mode';
+        statusEl.innerHTML = '✏️ <strong>Editing</strong> - Changes will update the template';
+        statusEl.style.display = 'flex';
+    }
+    
+    // Show delete button in edit mode
+    const deleteBtn = document.getElementById('recurringDeleteBtn');
+    if (deleteBtn) {
+        deleteBtn.style.display = 'block';
+    }
+    
+    const modal = document.getElementById('recurringModal') || createRecurringModal();
+    modal.classList.add('active');
+}
+
+/**
+ * Delete from edit modal
+ */
+function deleteRecurringFromEdit() {
+    if (editRecurringIndex === -1) return;
+    if (confirm('Delete this recurring transaction template? This cannot be undone.')) {
+        window.recurringTransactions.splice(editRecurringIndex, 1);
+        saveToFirebase();
+        closeRecurringModal();
+        renderRecurringTransactions();
+        if (window.sileo) window.sileo.success('Recurring transaction deleted!', 'Deleted');
+    }
+}
+
+/**
+ * Process recurring transactions - auto-generate due transactions
+ */
+function processRecurringTransactions() {
+    if (!window.recurringTransactions || !window.currentUser) return;
+
+    const today = new Date();
+    const dayOfMonth = today.getDate();
+
+    window.recurringTransactions.forEach(recurring => {
+        if (!recurring.isActive) return;
+
+        const lastGen = recurring.lastGenerated ? new Date(recurring.lastGenerated) : null;
+        let shouldGenerate = false;
+
+        if (!lastGen) {
+            shouldGenerate = true;
+        } else {
+            switch (recurring.frequency) {
+                case 'daily':
+                    shouldGenerate = !isSameDay(lastGen, today);
+                    break;
+                case 'weekly':
+                    shouldGenerate = getDayOfWeek(lastGen) !== getDayOfWeek(today) && 
+                                    Math.floor((today - lastGen) / (7 * 24 * 60 * 60 * 1000)) >= 1;
+                    break;
+                case 'monthly':
+                    shouldGenerate = lastGen.getMonth() !== today.getMonth() || lastGen.getFullYear() !== today.getFullYear();
+                    break;
+                case 'yearly':
+                    shouldGenerate = lastGen.getFullYear() !== today.getFullYear();
+                    break;
+            }
+        }
+
+        if (shouldGenerate && dayOfMonth === recurring.dayOfMonth) {
+            const transaction = {
+                id: `${recurring.id}_${Date.now()}`,
+                type: recurring.type,
+                category: recurring.category,
+                amount: recurring.amount,
+                date: today.toISOString().split('T')[0],
+                note: `Auto: ${recurring.name}`,
+                createdAt: new Date().toISOString(),
+                recurringId: recurring.id
+            };
+
+            window.transactions.unshift(transaction);
+            recurring.lastGenerated = new Date().toISOString();
+            console.log(`✅ Auto-generated: ${recurring.name}`);
+        }
+    });
+}
+
+/**
+ * Helper: Check if two dates are the same day
+ */
+function isSameDay(date1, date2) {
+    return date1.toDateString() === date2.toDateString();
+}
+
+/**
+ * Helper: Get day of week (0-6)
+ */
+function getDayOfWeek(date) {
+    return date.getDay();
+}
+
+/**
+ * Render recurring transactions list
+ */
+// Render recurring transactions - ENHANCED UI VERSION
+function renderRecurringTransactions() {
+    const container = document.getElementById('recurringContainer');
+    const emptyState = document.getElementById('recurringEmpty');
+    const recurringSection = document.getElementById('recurringSection');
+    
+    console.log('🔄 renderRecurringTransactions called', { container: !!container, recurring: window.recurringTransactions });
+    
+    if (!container) {
+        console.warn('⚠️ Container #recurringContainer not found!');
+        return;
+    }
+
+    // Ensure window.recurringTransactions exists and is an array
+    if (!window.recurringTransactions) {
+        window.recurringTransactions = [];
+    }
+
+    if (window.recurringTransactions.length === 0) {
+        if (container) container.style.display = 'none';
+        if (emptyState) emptyState.style.display = 'block';
+        if (recurringSection) recurringSection.style.display = 'block';
+        console.log('✅ Rendered empty state');
+        return;
+    }
+
+    if (container) container.style.display = 'grid';
+    if (emptyState) emptyState.style.display = 'none';
+    if (recurringSection) recurringSection.style.display = 'block';
+
+    // Helper: Get type icon
+    const getTypeIcon = (type) => {
+        const icons = {
+            expense: 'fa-shopping-cart',
+            income: 'fa-arrow-up',
+            savings: 'fa-piggy-bank'
+        };
+        return icons[type] || 'fa-tag';
+    };
+    
+    // Helper: Get type color
+    const getTypeColor = (type) => {
+        const colors = {
+            expense: '#ef4444',
+            income: '#10b981',
+            savings: '#3b82f6'
+        };
+        return colors[type] || '#6b7280';
+    };
+    
+    // Helper: Get frequency badge class
+    const getFrequencyClass = (frequency) => {
+        const classes = {
+            daily: 'frequency-daily',
+            weekly: 'frequency-weekly',
+            monthly: 'frequency-monthly',
+            yearly: 'frequency-yearly'
+        };
+        return classes[frequency] || 'frequency-monthly';
+    };
+    
+    // Helper: Get frequency icon
+    const getFrequencyIcon = (frequency) => {
+        const icons = {
+            daily: 'fa-calendar-day',
+            weekly: 'fa-calendar-week',
+            monthly: 'fa-calendar-alt',
+            yearly: 'fa-calendar'
+        };
+        return icons[frequency] || 'fa-calendar-alt';
+    };
+    
+    // Helper: Format frequency display
+    const formatFrequency = (freq) => {
+        return freq.charAt(0).toUpperCase() + freq.slice(1);
+    };
+
+    const html = window.recurringTransactions.map((recurring, index) => {
+        const typeColor = getTypeColor(recurring.type);
+        const frequencyClass = getFrequencyClass(recurring.frequency);
+        const frequencyIcon = getFrequencyIcon(recurring.frequency);
+        
+        return `
+            <div class="recurring-card">
+                <div class="recurring-card-header">
+                    <div class="recurring-name">
+                        <i class="${getTypeIcon(recurring.type)}" style="color: ${typeColor}; background: ${typeColor}10;"></i>
+                        <h4>${escapeHtml(recurring.name)}</h4>
+                    </div>
+                    <span class="status-badge ${recurring.isActive ? 'active' : 'inactive'}">
+                        <i class="fas fa-${recurring.isActive ? 'play' : 'pause'}"></i>
+                        ${recurring.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                </div>
+                
+                <div class="recurring-card-body">
+                    <div class="recurring-details">
+                        <div class="detail-row">
+                            <i class="fas fa-tag"></i>
+                            <span>Category:</span>
+                            <span class="category-tag">${escapeHtml(recurring.category)}</span>
+                        </div>
+                        <div class="detail-row">
+                            <i class="fas ${frequencyIcon}"></i>
+                            <span>Frequency:</span>
+                            <span class="frequency-badge ${frequencyClass}">
+                                ${formatFrequency(recurring.frequency)}
+                            </span>
+                        </div>
+                        ${recurring.frequency !== 'daily' && recurring.frequency !== 'weekly' ? `
+                        <div class="detail-row">
+                            <i class="fas fa-calendar-day"></i>
+                            <span>Day:</span>
+                            <span>Day ${recurring.dayOfMonth} of month</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                    
+                    <div class="recurring-amount">
+                        <span class="amount-label">Amount</span>
+                        <span class="amount-value">${formatCurrency(recurring.amount)}</span>
+                    </div>
+                </div>
+                
+                <div class="recurring-card-footer">
+                    <button class="card-btn edit" onclick="editRecurringTransaction(${index})">
+                        <i class="fas fa-edit"></i> Edit
+                    </button>
+                    <button class="card-btn delete" onclick="deleteRecurringTransaction(${index})">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    container.innerHTML = html;
+    console.log(`✅ Rendered ${window.recurringTransactions.length} recurring transactions with enhanced UI`);
+}
+
+/**
+ * Close recurring modal
+ */
+function closeRecurringModal() {
+    const modal = document.getElementById('recurringModal');
+    if (modal) {
+        modal.classList.remove('active');
+        editRecurringIndex = -1;
+    }
+}
+
+/**
+ * Create recurring modal if it doesn't exist
+ */
+function createRecurringModal() {
+    const modal = document.createElement('div');
+    modal.id = 'recurringModal';
+    modal.className = 'recurring-modal';
+    modal.innerHTML = `
+        <div class="recurring-modal-content">
+            <div class="recurring-modal-header">
+                <h2 id="recurringModalTitle">New Recurring Transaction</h2>
+                <button type="button" class="close-btn" onclick="closeRecurringModal()">✕</button>
+            </div>
+            <form id="recurringForm" class="recurring-form">
+                <div id="recurringFormStatus" class="form-status" style="display: none;"></div>
+                
+                <div class="form-group form-row-full">
+                    <label>Transaction Name <span class="required">*</span></label>
+                    <input type="text" id="recurringName" placeholder="e.g., Rent, Netflix, Salary" required autocomplete="off">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Type <span class="required">*</span></label>
+                        <select id="recurringType" required>
+                            <option value="expense">Expense</option>
+                            <option value="income">Income</option>
+                            <option value="savings">Savings</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Amount <span class="required">*</span></label>
+                        <input type="number" id="recurringAmount" placeholder="0.00" min="0.01" step="0.01" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Category <span class="required">*</span></label>
+                        <select id="recurringCategory" required></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Frequency <span class="required">*</span></label>
+                        <select id="recurringFrequency" required>
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly" selected>Monthly</option>
+                            <option value="yearly">Yearly</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group form-row-full">
+                    <label>Day of Month (1-31) <span class="required">*</span> <span class="help" id="dayHelp">Optional for non-monthly</span></label>
+                    <input type="number" id="recurringDayOfMonth" min="1" max="31" value="1" required>
+                </div>
+
+                <div class="form-group">
+                    <div class="checkbox-wrapper">
+                        <input type="checkbox" id="recurringActive" checked>
+                        <label for="recurringActive">Active - Transaction will auto-generate</label>
+                    </div>
+                </div>
+            </form>
+            <div class="recurring-modal-footer">
+                <button type="button" class="btn-cancel" onclick="closeRecurringModal()">Cancel</button>
+                <button type="button" id="recurringDeleteBtn" class="btn-delete" onclick="deleteRecurringFromEdit()" style="display: none;">🗑️ Delete</button>
+                <button type="button" class="btn-save" onclick="saveRecurringTransaction()">Save</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    // Populate category dropdown based on type
+    const typeSelect = modal.querySelector('#recurringType');
+    const categorySelect = modal.querySelector('#recurringCategory');
+    const frequencySelect = modal.querySelector('#recurringFrequency');
+    const dayField = modal.querySelector('#recurringDayOfMonth');
+    const dayHelp = modal.querySelector('#dayHelp');
+    
+    function updateCategories() {
+        const type = typeSelect.value;
+        let categories = [];
+        if (type === 'expense') categories = expenseCats;
+        else if (type === 'income') categories = incomeCats;
+        else if (type === 'savings') categories = savingsCats;
+        
+        categorySelect.innerHTML = categories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
+    }
+
+    function updateDayVisibility() {
+        const freq = frequencySelect.value;
+        if (freq === 'monthly' || freq === 'yearly') {
+            dayField.parentElement.style.display = 'flex';
+            dayHelp.style.display = 'inline';
+        } else {
+            dayField.parentElement.style.display = 'flex';
+            dayHelp.innerHTML = 'Ignored for daily/weekly';
+        }
+    }
+    
+    typeSelect.addEventListener('change', updateCategories);
+    frequencySelect.addEventListener('change', updateDayVisibility);
+    updateCategories();
+    updateDayVisibility();
+    
+    // Close on overlay click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeRecurringModal();
+    });
+    
+    return modal;
+}
+
+// ===== UNIFIED OFFLINE MANAGER - ADD AT VERY END OF FILE =====
+// This replaces ALL previous offline code
+
+(function() {
+    'use strict';
+    
+    const UnifiedOfflineManager = {
+        initialized: false,
+        syncInProgress: false,
+        retryQueue: [],
+        
+        async init() {
+            if (this.initialized) return;
+            console.log('📱 Initializing Unified Offline Manager...');
+            
+            if (window.db && firebase.firestore) {
+                try {
+                    await window.db.enablePersistence({ synchronizeTabs: true });
+                    console.log('✅ Firestore persistence enabled');
+                } catch (err) {
+                    if (err.code === 'failed-precondition') console.warn('Multiple tabs open');
+                    else if (err.code === 'unimplemented') console.warn('Persistence not supported');
+                }
+            }
+            
+            this.setupNetworkListeners();
+            this.startAutoBackup();
+            this.initialized = true;
+        },
+        
+        setupNetworkListeners() {
+            const indicator = this.createIndicator();
+            
+            window.addEventListener('online', async () => {
+                if (indicator) indicator.classList.remove('show');
+                if (window.sileo) window.sileo.info('Syncing offline data...', 'Back Online');
+                await this.syncPendingChanges();
+                if (typeof render === 'function') render();
+                if (window.sileo) window.sileo.success('Data synced!', 'Sync Complete');
+            });
+            
+            window.addEventListener('offline', () => {
+                if (indicator) indicator.classList.add('show');
+                if (window.sileo) window.sileo.warning('Offline mode. Data will sync when online.', 'Offline');
+            });
+            
+            if (!navigator.onLine && indicator) indicator.classList.add('show');
+        },
+        
+        createIndicator() {
+            let indicator = document.getElementById('offlineIndicator');
+            if (!indicator) {
+                indicator = document.createElement('div');
+                indicator.id = 'offlineIndicator';
+                indicator.className = 'offline-indicator';
+                indicator.innerHTML = '<i class="fas fa-wifi"></i> Offline Mode';
+                indicator.style.cssText = 'position:fixed;bottom:20px;left:20px;background:#ef4444;color:white;padding:8px 16px;border-radius:40px;font-size:12px;z-index:9999;display:none;';
+                document.body.appendChild(indicator);
+            }
+            return indicator;
+        },
+        
+        backupToLocalStorage() {
+            if (!window.currentUser) return;
+            const backup = {
+                transactions: window.transactions || [],
+                recurringTransactions: window.recurringTransactions || [],
+                budgetLimit: window.budgetLimit || 0,
+                debtGoal: window.debtGoal || 0,
+                savingsGoal: window.savingsGoal || 0,
+                goals: window.goals || [],
+                bills: window.bills || [],
+                lastBackup: new Date().toISOString()
+            };
+            localStorage.setItem(`kaleb_backup_${window.currentUser.uid}`, JSON.stringify(backup));
+        },
+        
+        restoreFromBackup() {
+            if (!window.currentUser) return false;
+            const backup = localStorage.getItem(`kaleb_backup_${window.currentUser.uid}`);
+            if (!backup) return false;
+            try {
+                const data = JSON.parse(backup);
+                if (data.transactions) window.transactions = data.transactions;
+                if (data.recurringTransactions) window.recurringTransactions = data.recurringTransactions;
+                if (data.budgetLimit !== undefined) window.budgetLimit = data.budgetLimit;
+                if (data.debtGoal !== undefined) window.debtGoal = data.debtGoal;
+                if (data.savingsGoal !== undefined) window.savingsGoal = data.savingsGoal;
+                if (data.goals) window.goals = data.goals;
+                if (data.bills) window.bills = data.bills;
+                console.log(`📦 Restored ${window.transactions.length} transactions from backup`);
+                return true;
+            } catch (e) { return false; }
+        },
+        
+        addToRetryQueue(data, type = 'transaction') {
+            this.retryQueue.push({
+                id: Date.now(),
+                type: type,
+                data: data,
+                timestamp: new Date().toISOString()
+            });
+            if (this.retryQueue.length > 1000) this.retryQueue = this.retryQueue.slice(-1000);
+            localStorage.setItem('offline_retry_queue', JSON.stringify(this.retryQueue));
+            localStorage.setItem('pending_sync', 'true');
+        },
+        
+        async syncToFirebase(transactions) {
+            if (!window.currentUser || !window.db) return false;
+            
+            const userRef = window.db.collection('users').doc(window.currentUser.uid);
+            const doc = await userRef.get();
+            let existing = doc.exists ? (doc.data().transactions || []) : [];
+            
+            const existingIds = new Set(existing.map(t => t.id));
+            const newTx = transactions.filter(t => t.id && !existingIds.has(t.id));
+            if (newTx.length === 0) return true;
+            
+            await userRef.set({
+                transactions: [...newTx, ...existing],
+                monthlyBudget: window.budgetLimit,
+                debtGoal: window.debtGoal,
+                savingsGoal: window.savingsGoal,
+                goals: window.goals,
+                bills: window.bills,
+                lastSync: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            
+            window.transactions = [...newTx, ...existing];
+            this.backupToLocalStorage();
+            console.log(`✅ Synced ${newTx.length} transactions`);
+            return true;
+        },
+        
+        async syncPendingChanges() {
+            if (this.syncInProgress || !navigator.onLine || !window.currentUser) return;
+            this.syncInProgress = true;
+            
+            try {
+                const saved = localStorage.getItem('offline_retry_queue');
+                if (saved) this.retryQueue = JSON.parse(saved);
+                if (this.retryQueue.length === 0) return;
+                
+                const transactions = this.retryQueue.filter(item => item.type === 'transaction');
+                if (transactions.length) await this.syncToFirebase(transactions.map(t => t.data));
+                
+                this.retryQueue = this.retryQueue.filter(item => !transactions.includes(item));
+                localStorage.setItem('offline_retry_queue', JSON.stringify(this.retryQueue));
+                if (typeof render === 'function') render();
+            } catch (error) {
+                console.error('Sync failed:', error);
+            } finally {
+                this.syncInProgress = false;
+            }
+        },
+        
+        startAutoBackup() {
+            setInterval(() => {
+                if (window.transactions && window.currentUser) {
+                    this.backupToLocalStorage();
+                    if (navigator.onLine && this.retryQueue.length) this.syncPendingChanges();
+                }
+            }, 30000);
+        },
+        
+        clearLocalData() {
+            if (window.currentUser) localStorage.removeItem(`kaleb_backup_${window.currentUser.uid}`);
+            localStorage.removeItem('offline_retry_queue');
+            localStorage.removeItem('pending_sync');
+            this.retryQueue = [];
+        }
+    };
+    
+    // Preserve original functions
+    const originalSaveNewTransaction = window.saveNewTransaction;
+    const originalLoadUserData = window.loadUserData;
+    const originalSaveToFirebase = window.saveToFirebase;
+    
+    // Replace saveNewTransaction
+    window.saveNewTransaction = async function() {
+        const type = document.querySelector('#addTransactionModal .type-btn.active')?.dataset.type || 'expense';
+        const category = document.getElementById('modalCategory').value;
+        let amount = parseFloat(document.getElementById('modalAmount').value);
+        const date = document.getElementById('modalDate').value;
+        const note = document.getElementById('modalNote').value;
+    
+        if (!category || isNaN(amount) || amount <= 0 || !date) {
+            if (window.sileo) window.sileo.error('Please fill all fields correctly', 'Error');
+            return;
+        }
+    
+        const transaction = {
+            id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            type, category, amount, date, note: note || '',
+            createdAt: new Date().toISOString()
+        };
+    
+        if (!window.transactions) window.transactions = [];
+        window.transactions.unshift(transaction);
+        UnifiedOfflineManager.backupToLocalStorage();
+        
+        if (navigator.onLine && window.currentUser) {
+            try {
+                await UnifiedOfflineManager.syncToFirebase([transaction]);
+                if (window.sileo) window.sileo.success(`${type === 'expense' ? 'Expense' : type === 'income' ? 'Income' : 'Savings'} added!`, 'Success');
+            } catch (error) {
+                UnifiedOfflineManager.addToRetryQueue(transaction);
+                if (window.sileo) window.sileo.warning('Saved offline. Will sync when online.', 'Offline Save');
+            }
+        } else {
+            UnifiedOfflineManager.addToRetryQueue(transaction);
+            if (window.sileo) window.sileo.success('Transaction saved offline!', 'Offline');
+        }
+        
+        closeAddTransactionModal();
+        if (typeof render === 'function') render();
+        document.getElementById('modalAmount').value = '';
+        document.getElementById('modalNote').value = '';
+    };
+    
+    // Replace loadUserData
+    window.loadUserData = async function() {
+        console.log('Loading data for user:', window.currentUser?.uid);
+        if (!window.currentUser) return;
+    
+        const loader = document.getElementById('loader');
+        if (loader) loader.style.display = 'flex';
+    
+        await UnifiedOfflineManager.init();
+        
+        // Get local backup first (source of truth for deletions)
+        const backupData = localStorage.getItem(`kaleb_backup_${window.currentUser.uid}`);
+        let localTx = [];
+        if (backupData) {
+            try {
+                localTx = JSON.parse(backupData).transactions || [];
+            } catch (e) {
+                console.warn('Failed to parse local backup:', e);
+            }
+        }
+        
+        // If online, sync with Firebase and resolve conflicts
+        if (navigator.onLine && window.db) {
+            try {
+                const doc = await window.db.collection('users').doc(window.currentUser.uid).get();
+                if (doc.exists) {
+                    const data = doc.data();
+                    const cloudTx = data.transactions || [];
+                    
+                    // Create sets for comparison
+                    const localIds = new Set(localTx.map(t => t.id));
+                    const cloudIds = new Set(cloudTx.map(t => t.id));
+                    
+                    // Only sync transactions that exist BOTH locally and in cloud
+                    // This prevents deleted transactions from coming back
+                    const syncedTx = cloudTx.filter(t => localIds.has(t.id));
+                    
+                    // Find new transactions from cloud (exist in cloud but not local)
+                    const newCloudTx = cloudTx.filter(t => !localIds.has(t.id));
+                    
+                    // Find local transactions to push (exist locally but not in cloud)
+                    const localOnlyTx = localTx.filter(t => !cloudIds.has(t.id));
+                    
+                    // Final merge: synced + new from cloud + local additions
+                    window.transactions = [...syncedTx, ...newCloudTx, ...localOnlyTx];
+                    
+                    // Load recurring transactions
+                    window.recurringTransactions = data.recurringTransactions || [];
+                    
+                    window.budgetLimit = data.monthlyBudget || window.budgetLimit;
+                    window.debtGoal = data.debtGoal || window.debtGoal;
+                    window.savingsGoal = data.savingsGoal || window.savingsGoal;
+                    window.goals = data.goals || window.goals;
+                    window.bills = data.bills || window.bills;
+                    UnifiedOfflineManager.backupToLocalStorage();
+                    console.log(`✅ Loaded ${window.transactions.length} transactions (synced: ${syncedTx.length}, cloud: ${newCloudTx.length}, local: ${localOnlyTx.length})`);
+                    
+                    // Sync local-only transactions to Firebase
+                    if (localOnlyTx.length > 0) {
+                        console.log('📤 Syncing local-only transactions to Firebase...');
+                        await UnifiedOfflineManager.syncToFirebase(localOnlyTx);
+                    }
+                }
+            } catch (error) {
+                console.warn('Firebase load failed, using local backup:', error);
+                // If Firebase fails, fall back to local backup
+                window.transactions = localTx;
+            }
+        } else {
+            // If offline, use local backup
+            window.transactions = localTx;
+        }
+        
+        // Process and auto-generate recurring transactions
+        processRecurringTransactions();
+        
+        if (typeof migrateOldTransactions === 'function') await migrateOldTransactions();
+        if (typeof loadUserAvatar === 'function') await loadUserAvatar();
+        if (typeof initializeApp === 'function') initializeApp();
+        if (typeof render === 'function') render();
+        
+        // Render recurring transactions after longer delay to ensure DOM is ready
+        setTimeout(() => {
+            console.log('⏱️ Running delayed render...');
+            renderRecurringTransactions();
+            if (typeof updateCategoryChart === 'function') updateCategoryChart();
+            if (typeof updateTrendChart === 'function') updateTrendChart();
+            if (typeof initCharts === 'function') initCharts();
+        }, 1000);
+    
+        if (loader) loader.style.display = 'none';
+        
+        if (navigator.onLine) setTimeout(() => UnifiedOfflineManager.syncPendingChanges(), 1000);
+    };
+    
+    // Replace saveToFirebase
+    window.saveToFirebase = async function() {
+        UnifiedOfflineManager.backupToLocalStorage();
+        
+        if (navigator.onLine && window.currentUser && window.db) {
+            try {
+                // Always sync current transaction state to Firebase when online
+                const dataToSave = {
+                    transactions: window.transactions || [],
+                    recurringTransactions: window.recurringTransactions || [],
+                    monthlyBudget: window.budgetLimit,
+                    debtGoal: window.debtGoal,
+                    savingsGoal: window.savingsGoal,
+                    goals: window.goals,
+                    bills: window.bills,
+                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                
+                await window.db.collection('users').doc(window.currentUser.uid).set(dataToSave, { merge: true });
+                console.log('✅ Full sync to Firebase complete');
+                
+                // Also sync any pending transactions from retry queue
+                await UnifiedOfflineManager.syncPendingChanges();
+            } catch (error) {
+                console.error('Firebase sync failed:', error);
+                // Mark for retry
+                localStorage.setItem('pending_sync', 'true');
+            }
+        }
+        
+        if (typeof loadUserAvatar === 'function') await loadUserAvatar();
+        if (typeof render === 'function') render();
+        return true;
+    };
+    
+    // Initialize on DOM ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => UnifiedOfflineManager.init());
+    } else {
+        UnifiedOfflineManager.init();
+    }
+    
+    // Export for debugging
+    window.UnifiedOfflineManager = UnifiedOfflineManager;
+    // ===== SKELETON LOADER FUNCTIONS =====
+
+// Show skeleton loaders in transactions table
+function showTransactionsSkeleton() {
+    const tbody = document.getElementById('tbody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '';
+    for (let i = 0; i < 5; i++) {
+        tbody.innerHTML += `
+            <tr class="skeleton-row">
+                <td><div class="skeleton-cell category"></div></td>
+                <td><div class="skeleton-cell amount"></div></td>
+                <td><div class="skeleton-cell date"></div></td>
+                <td><div class="skeleton-cell actions"></div></td>
+            </tr>
+        `;
+    }
+}
+
+// Show skeleton loaders in stats grid
+function showStatsSkeleton() {
+    const statsGrid = document.querySelector('.stats-grid');
+    if (!statsGrid) return;
+    
+    // Save original content
+    if (!statsGrid.hasAttribute('data-original-content')) {
+        statsGrid.setAttribute('data-original-content', statsGrid.innerHTML);
+    }
+    
+    statsGrid.innerHTML = '';
+    for (let i = 0; i < 4; i++) {
+        statsGrid.innerHTML += `
+            <div class="skeleton-stat-card">
+                <div class="skeleton-stat-icon"></div>
+                <div class="skeleton-stat-label"></div>
+                <div class="skeleton-stat-value"></div>
+            </div>
+        `;
+    }
+}
+
+// Show skeleton loaders in overview grid
+function showOverviewSkeleton() {
+    const overviewGrid = document.querySelector('.overview-grid');
+    if (!overviewGrid) return;
+    
+    if (!overviewGrid.hasAttribute('data-original-content')) {
+        overviewGrid.setAttribute('data-original-content', overviewGrid.innerHTML);
+    }
+    
+    overviewGrid.innerHTML = '';
+    for (let i = 0; i < 4; i++) {
+        overviewGrid.innerHTML += `
+            <div class="skeleton-overview-card">
+                <div class="skeleton-overview-header">
+                    <div class="skeleton-overview-title"></div>
+                    <div class="skeleton-overview-icon"></div>
+                </div>
+                <div class="skeleton-progress"></div>
+            </div>
+        `;
+    }
+}
+
+// Show skeleton loaders in goals section
+function showGoalsSkeleton() {
+    const goalsContainer = document.getElementById('goalsContainer');
+    if (!goalsContainer) return;
+    
+    if (!goalsContainer.hasAttribute('data-original-content')) {
+        goalsContainer.setAttribute('data-original-content', goalsContainer.innerHTML);
+    }
+    
+    goalsContainer.innerHTML = '';
+    for (let i = 0; i < 3; i++) {
+        goalsContainer.innerHTML += `
+            <div class="skeleton-goal-item">
+                <div class="skeleton-goal-header">
+                    <div class="skeleton-goal-name"></div>
+                </div>
+                <div class="skeleton-goal-progress"></div>
+            </div>
+        `;
+    }
+}
+
+// Show skeleton loaders in bills section
+function showBillsSkeleton() {
+    const billsContainer = document.getElementById('billsContainer');
+    if (!billsContainer) return;
+    
+    if (!billsContainer.hasAttribute('data-original-content')) {
+        billsContainer.setAttribute('data-original-content', billsContainer.innerHTML);
+    }
+    
+    billsContainer.innerHTML = '';
+    for (let i = 0; i < 3; i++) {
+        billsContainer.innerHTML += `
+            <div class="skeleton-bill-item">
+                <div class="skeleton-bill-info">
+                    <div class="skeleton-bill-name"></div>
+                    <div class="skeleton-bill-date"></div>
+                </div>
+                <div class="skeleton-bill-amount"></div>
+            </div>
+        `;
+    }
+}
+
+// Hide all skeletons and show real content
+function hideAllSkeletons() {
+    // Restore stats grid
+    const statsGrid = document.querySelector('.stats-grid');
+    if (statsGrid && statsGrid.hasAttribute('data-original-content')) {
+        statsGrid.innerHTML = statsGrid.getAttribute('data-original-content');
+        statsGrid.removeAttribute('data-original-content');
+    }
+    
+    // Restore overview grid
+    const overviewGrid = document.querySelector('.overview-grid');
+    if (overviewGrid && overviewGrid.hasAttribute('data-original-content')) {
+        overviewGrid.innerHTML = overviewGrid.getAttribute('data-original-content');
+        overviewGrid.removeAttribute('data-original-content');
+    }
+    
+    // Restore goals container
+    const goalsContainer = document.getElementById('goalsContainer');
+    if (goalsContainer && goalsContainer.hasAttribute('data-original-content')) {
+        goalsContainer.innerHTML = goalsContainer.getAttribute('data-original-content');
+        goalsContainer.removeAttribute('data-original-content');
+    }
+    
+    // Restore bills container
+    const billsContainer = document.getElementById('billsContainer');
+    if (billsContainer && billsContainer.hasAttribute('data-original-content')) {
+        billsContainer.innerHTML = billsContainer.getAttribute('data-original-content');
+        billsContainer.removeAttribute('data-original-content');
+    }
+}
+
+// Show loading skeleton while data loads
+function showLoadingSkeleton(view = 'dashboard') {
+    switch(view) {
+        case 'dashboard':
+            showStatsSkeleton();
+            showOverviewSkeleton();
+            break;
+        case 'transactions':
+            showTransactionsSkeleton();
+            break;
+        case 'goals':
+            showGoalsSkeleton();
+            break;
+        case 'bills':
+            showBillsSkeleton();
+            break;
+    }
+}
+})();

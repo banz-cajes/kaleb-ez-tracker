@@ -34,6 +34,7 @@
 
     <!-- CSS -->
     <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/recurring.css">
     <link rel="manifest" href="manifest.json">
 
     <!-- ICONS -->
@@ -429,6 +430,31 @@
             <div id="billsSection" class="bills-section">
                 <div id="billsContainer" class="bills-grid"></div>
             </div>
+
+           <!-- Recurring Transactions Section -->
+<div id="recurringSection" class="recurring-section">
+    <div class="recurring-header">
+        <h2>
+            <i class="fas fa-sync-alt"></i>
+            Recurring Transactions
+        </h2>
+        <button class="btn-add-recurring" onclick="createRecurringTransaction()">
+            <i class="fas fa-plus"></i>
+            Add Recurring
+        </button>
+    </div>
+    <div id="recurringContainer" class="recurring-grid"></div>
+    
+    <!-- Empty State (hidden by default) -->
+    <div id="recurringEmpty" class="recurring-empty" style="display: none;">
+        <i class="fas fa-calendar-alt"></i>
+        <h3>No Recurring Transactions</h3>
+        <p>Set up recurring transactions for bills, subscriptions, and regular income.</p>
+        <button class="btn-add-recurring" onclick="createRecurringTransaction()" style="margin-top: 20px;">
+            <i class="fas fa-plus"></i> Create First Recurring
+        </button>
+    </div>
+</div>
         </div>
 
         <div id="householdView" class="view">
@@ -1173,6 +1199,92 @@
         </div>
     </div>
 
+<!-- Recurring Modal - Enhanced (Mobile Fixed with Scroll) -->
+<div id="recurringModal" class="recurring-modal-overlay">
+    <div class="recurring-modal">
+        <div class="recurring-modal-header">
+            <h2>
+                <i class="fas fa-sync-alt"></i>
+                <span id="recurringModalTitle">Add Recurring Transaction</span>
+            </h2>
+            <button class="recurring-modal-close" onclick="closeRecurringModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <div class="recurring-modal-body">
+            <input type="hidden" id="editRecurringId">
+            
+            <div class="form-group-recurring">
+                <label><i class="fas fa-tag"></i> Transaction Name</label>
+                <input type="text" id="recurringName" placeholder="e.g., Monthly Rent, Netflix Subscription" autocomplete="off">
+            </div>
+            
+            <div class="form-row-recurring">
+                <div class="form-group-recurring">
+                    <label><i class="fas fa-chart-line"></i> Type</label>
+                    <select id="recurringType">
+                        <option value="expense">💸 Expense</option>
+                        <option value="income">💰 Income</option>
+                        <option value="savings">🏦 Savings</option>
+                    </select>
+                </div>
+                <div class="form-group-recurring">
+                    <label><i class="fas fa-coins"></i> Amount</label>
+                    <input type="number" id="recurringAmount" placeholder="0.00" step="0.01">
+                </div>
+            </div>
+            
+            <div class="form-row-recurring">
+                <div class="form-group-recurring">
+                    <label><i class="fas fa-folder"></i> Category</label>
+                    <select id="recurringCategory"></select>
+                </div>
+                <div class="form-group-recurring">
+                    <label><i class="fas fa-clock"></i> Frequency</label>
+                    <select id="recurringFrequency">
+                        <option value="daily">📅 Daily</option>
+                        <option value="weekly">📅 Weekly</option>
+                        <option value="monthly" selected>📅 Monthly</option>
+                        <option value="yearly">📅 Yearly</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="form-group-recurring">
+                <label><i class="fas fa-calendar-day"></i> Day of Month</label>
+                <input type="number" id="recurringDayOfMonth" min="1" max="31" value="1" placeholder="1-31">
+                <small style="color: var(--gray-500); font-size: 0.7rem; display: block; margin-top: 5px;">For monthly/yearly transactions</small>
+            </div>
+            
+            <!-- In the recurring modal, replace the toggle-group div with this: -->
+<div class="recurring-toggle-group">
+    <div class="recurring-toggle-label">
+        <i class="fas fa-play-circle"></i>
+        <span>Active</span>
+    </div>
+    <label class="recurring-toggle-switch">
+        <input type="checkbox" id="recurringActive" checked>
+        <span class="recurring-toggle-slider"></span>
+    </label>
+</div>
+        </div>
+        
+        <div class="recurring-modal-footer">
+            <button class="btn-modal-delete" id="recurringDeleteBtn" style="display: none;" onclick="deleteRecurringFromEdit()">
+                <i class="fas fa-trash"></i> Delete Transaction
+            </button>
+            <div class="modal-footer-buttons-row">
+                <button class="btn-modal-cancel" onclick="closeRecurringModal()">
+                    Cancel
+                </button>
+                <button class="btn-modal-save" onclick="saveRecurringTransaction()">
+                    <i class="fas fa-save"></i> Save
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
     <!-- Scripts -->
     <script src="js/config.js"></script>
     <script src="js/notifications.js"></script>
@@ -1306,7 +1418,42 @@
         })();
 
     </script>
-
+<script>
+  // Register Service Worker with error handling
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('/sw.js')
+        .then(function(registration) {
+          console.log('✅ Service Worker registered successfully:', registration.scope);
+          
+          // Check for updates
+          registration.addEventListener('updatefound', () => {
+            const newWorker = registration.installing;
+            console.log('🔄 Service Worker update found');
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                console.log('🔄 New update available - refresh to activate');
+                // Optional: Show update notification
+                if (window.sileo) {
+                  window.sileo.info('New update available! Refresh to get latest features.', 'Update Available');
+                }
+              }
+            });
+          });
+        })
+        .catch(function(error) {
+          console.log('❌ Service Worker registration failed:', error);
+        });
+      
+      // Handle controller changes (when new SW takes over)
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        console.log('🔄 Service Worker controller changed');
+        // Optional: Reload to get new version
+        // window.location.reload();
+      });
+    });
+  }
+</script>
 </body>
 
 </html>

@@ -1,92 +1,149 @@
-// ===== KALEB SERVICE WORKER - FIXED =====
-const CACHE_NAME = 'kaleb-v1';
+// ===== KALEB SERVICE WORKER - CLEAN WORKING VERSION =====
+const CACHE_NAME = 'kaleb-v2';
+const OFFLINE_URL = '/offline.html';
 
-// Assets to cache (only static files, NOT API calls)
+// Static assets to cache
 const STATIC_ASSETS = [
   '/',
   '/index.html',
+  '/login.html',
+  '/offline.html',
   '/css/styles.css',
   '/js/app.js',
   '/js/config.js',
   '/js/analytics.js',
   '/js/notifications.js',
-  '/manifest.json',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap',
-  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css'
+  '/js/auth.js',
+  '/manifest.json'
 ];
 
 // Install event - cache static assets
 self.addEventListener('install', (event) => {
-  console.log('Service Worker installed');
+  console.log('✅ Service Worker installing...');
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
-    })
+    caches.open(CACHE_NAME)
+      .then(async (cache) => {
+        // Cache each asset individually to prevent one failure from breaking all
+        for (const asset of STATIC_ASSETS) {
+          try {
+            await cache.add(asset);
+            console.log('Cached:', asset);
+          } catch (err) {
+            console.log('Failed to cache:', asset, err);
+          }
+        }
+      })
+      .catch(err => console.log('Cache open error:', err))
   );
+  // Activate immediately
   self.skipWaiting();
 });
 
 // Activate event - clean old caches
 self.addEventListener('activate', (event) => {
-  console.log('Service Worker activated');
+  console.log('✅ Service Worker activating...');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cache) => {
           if (cache !== CACHE_NAME) {
-            console.log('Deleting old cache:', cache);
+            console.log('🗑️ Deleting old cache:', cache);
             return caches.delete(cache);
           }
         })
       );
+    }).then(() => {
+      console.log('✅ Service Worker ready to control clients');
+      return self.clients.claim();
     })
   );
-  self.clients.claim();
 });
 
-// Fetch event - STRATEGY: Cache First for static, Network First for Firebase
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
+// Helper: Check if request should be skipped (not cached)
+function shouldSkipFetch(url) {
+  // Skip chrome extensions and other browser extensions
+  if (url.startsWith('chrome-extension:') ||
+      url.startsWith('chrome-devtools:') ||
+      url.startsWith('edge:') ||
+      url.startsWith('moz-extension:') ||
+      url.startsWith('about:') ||
+      url.startsWith('data:') ||
+      url.startsWith('blob:')) {
+    return true;
+  }
   
-  // CRITICAL: NEVER cache Firebase/Firestore requests
-  if (url.hostname.includes('firestore.googleapis.com') ||
-      url.hostname.includes('firebase') ||
-      url.pathname.includes('/v1/') ||
-      url.hostname.includes('googleapis.com')) {
-    // Go directly to network for Firebase - DO NOT USE CACHE
-    event.respondWith(fetch(event.request));
+  // Skip Firebase/Firestore (always fresh)
+  if (url.includes('firestore.googleapis.com') ||
+      url.includes('firebase') ||
+      url.includes('googleapis.com') ||
+      url.includes('firebaseapp.com')) {
+    return true;
+  }
+  
+  return false;
+}
+
+// Fetch event - smart caching strategy
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  const url = request.url;
+  
+  // Skip unsupported requests
+  if (shouldSkipFetch(url)) {
     return;
   }
   
-  // For static assets (CSS, JS, HTML) - use cache first then network
-  if (STATIC_ASSETS.some(asset => event.request.url.includes(asset) || 
-      event.request.url.endsWith('.css') ||
-      event.request.url.endsWith('.js') ||
-      event.request.url.endsWith('.html') ||
-      event.request.url.includes('/icons/'))) {
-    
+  // Handle navigation requests (HTML pages)
+  if (request.mode === 'navigate') {
     event.respondWith(
-      caches.match(event.request).then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-        return fetch(event.request).then((networkResponse) => {
-          return caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, networkResponse.clone());
-            return networkResponse;
+      fetch(request)
+        .then((response) => {
+          // Cache the page for offline use
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, responseClone);
           });
-        });
-      }).catch(() => {
-        return new Response('Offline - Content not available', { status: 404 });
-      })
+          return response;
+        })
+        .catch(async () => {
+          // Return offline page when offline
+          const cachedResponse = await caches.match(OFFLINE_URL);
+          return cachedResponse || new Response('You are offline', { 
+            status: 503,
+            headers: { 'Content-Type': 'text/html' }
+          });
+        })
     );
     return;
   }
   
-  // For all other requests (images, etc.) - network first
+  // For static assets (CSS, JS, etc.) - cache first, then network
   event.respondWith(
-    fetch(event.request).catch(() => {
-      return caches.match(event.request);
-    })
+    caches.match(request)
+      .then((cachedResponse) => {
+        if (cachedResponse) {
+          // Return cached version
+          return cachedResponse;
+        }
+        
+        // Not in cache, fetch from network
+        return fetch(request).then((networkResponse) => {
+          // Only cache successful responses
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(request, responseClone);
+            });
+          }
+          return networkResponse;
+        });
+      })
+      .catch(() => {
+        // Fallback for images
+        if (request.destination === 'image') {
+          return new Response('', { status: 404 });
+        }
+        return new Response('Resource not available offline', { status: 404 });
+      })
   );
 });

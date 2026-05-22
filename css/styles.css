@@ -8998,3 +8998,182 @@ body {
 [data-theme="dark"] .all-time-label {
     color: var(--gray-400);
 }
+
+/* ===== SKELETON LOADING ANIMATIONS ===== */
+@keyframes skeleton-loading {
+    0% {
+        background-position: -1000px 0;
+    }
+    100% {
+        background-position: 1000px 0;
+    }
+}
+
+.skeleton {
+    background: linear-gradient(90deg, var(--gray-200) 25%, var(--gray-100) 50%, var(--gray-200) 75%);
+    background-size: 1000px 100%;
+    animation: skeleton-loading 2s infinite;
+    border-radius: var(--radius-md);
+}
+
+/* Skeleton for transactions table rows */
+.skeleton-row {
+    display: flex;
+    align-items: center;
+    padding: 16px;
+    border-bottom: 1px solid var(--gray-200);
+    gap: 16px;
+}
+
+.skeleton-cell {
+    height: 20px;
+    background: linear-gradient(90deg, var(--gray-200) 25%, var(--gray-100) 50%, var(--gray-200) 75%);
+    background-size: 1000px 100%;
+    animation: skeleton-loading 2s infinite;
+    border-radius: 8px;
+}
+
+.skeleton-cell.category {
+    width: 35%;
+    height: 24px;
+}
+
+.skeleton-cell.amount {
+    width: 20%;
+    height: 24px;
+}
+
+.skeleton-cell.date {
+    width: 20%;
+    height: 24px;
+}
+
+.skeleton-cell.actions {
+    width: 15%;
+    height: 32px;
+}
+
+/* Skeleton for stat cards */
+.skeleton-stat-card {
+    background: var(--gray-50);
+    border-radius: var(--radius-xl);
+    padding: var(--space-lg);
+    border: 1px solid var(--gray-200);
+}
+
+.skeleton-stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-lg);
+    background: linear-gradient(90deg, var(--gray-200) 25%, var(--gray-100) 50%, var(--gray-200) 75%);
+    background-size: 1000px 100%;
+    animation: skeleton-loading 2s infinite;
+    margin-bottom: var(--space-md);
+}
+
+.skeleton-stat-label {
+    width: 60%;
+    height: 12px;
+    margin-bottom: 8px;
+}
+
+.skeleton-stat-value {
+    width: 80%;
+    height: 28px;
+}
+
+/* Skeleton for overview cards */
+.skeleton-overview-card {
+    background: var(--gray-50);
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--gray-200);
+    padding: var(--space-lg);
+}
+
+.skeleton-overview-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.skeleton-overview-title {
+    width: 40%;
+    height: 20px;
+}
+
+.skeleton-overview-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+}
+
+.skeleton-progress {
+    width: 100%;
+    height: 8px;
+    border-radius: var(--radius-full);
+    margin: 12px 0;
+}
+
+/* Skeleton for goals */
+.skeleton-goal-item {
+    background: var(--gray-50);
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--gray-200);
+    padding: var(--space-lg);
+}
+
+.skeleton-goal-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.skeleton-goal-name {
+    width: 50%;
+    height: 20px;
+}
+
+.skeleton-goal-progress {
+    width: 100%;
+    height: 8px;
+    border-radius: var(--radius-full);
+    margin: 12px 0;
+}
+
+/* Skeleton for bills */
+.skeleton-bill-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    background: var(--gray-50);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--gray-200);
+    margin-bottom: 12px;
+}
+
+.skeleton-bill-info {
+    flex: 1;
+}
+
+.skeleton-bill-name {
+    width: 40%;
+    height: 18px;
+    margin-bottom: 8px;
+}
+
+.skeleton-bill-date {
+    width: 30%;
+    height: 12px;
+}
+
+.skeleton-bill-amount {
+    width: 80px;
+    height: 24px;
+    border-radius: 8px;
+}
+
+/* Hide skeleton when content loads */
+.skeleton-hide {
+    display: none !important;
+}
