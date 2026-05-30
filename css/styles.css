@@ -9177,3 +9177,775 @@ body {
 .skeleton-hide {
     display: none !important;
 }
+
+/* ===== PREMIUM RECURRING TRANSACTIONS UI ===== */
+
+/* Enhanced Recurring Section */
+.recurring-section {
+    margin-top: 24px;
+    position: relative;
+}
+
+.recurring-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.recurring-header h2 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--gray-800);
+}
+
+.recurring-header h2 i {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    font-size: 1.5rem;
+}
+
+/* Stats Bar */
+.recurring-stats-bar {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+}
+
+.recurring-stat-card {
+    background: var(--gray-50);
+    border-radius: 20px;
+    padding: 16px 24px;
+    flex: 1;
+    min-width: 120px;
+    text-align: center;
+    border: 1px solid var(--gray-200);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.recurring-stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--primary), var(--primary-light));
+    transform: scaleX(0);
+    transition: transform 0.3s ease;
+}
+
+.recurring-stat-card:hover::before {
+    transform: scaleX(1);
+}
+
+.recurring-stat-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-md);
+}
+
+.recurring-stat-value {
+    font-size: 1.8rem;
+    font-weight: 800;
+    display: block;
+    line-height: 1.2;
+}
+
+.recurring-stat-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+    color: var(--gray-500);
+    margin-top: 4px;
+}
+
+/* Premium Recurring Cards */
+.recurring-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 20px;
+}
+
+.recurring-card {
+    background: var(--gray-50);
+    border-radius: 24px;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid var(--gray-200);
+    position: relative;
+    animation: cardFadeIn 0.4s ease-out;
+    animation-fill-mode: both;
+}
+
+.recurring-card:nth-child(1) { animation-delay: 0.05s; }
+.recurring-card:nth-child(2) { animation-delay: 0.1s; }
+.recurring-card:nth-child(3) { animation-delay: 0.15s; }
+.recurring-card:nth-child(4) { animation-delay: 0.2s; }
+.recurring-card:nth-child(5) { animation-delay: 0.25s; }
+.recurring-card:nth-child(6) { animation-delay: 0.3s; }
+
+@keyframes cardFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.recurring-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 20px 35px -12px rgba(0, 0, 0, 0.2);
+    border-color: var(--primary-light);
+}
+
+/* Card Header with Gradient */
+.recurring-card-header {
+    padding: 20px 20px 16px;
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.08), rgba(139, 92, 246, 0.03));
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.recurring-name {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.recurring-name i {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 16px;
+    font-size: 1.3rem;
+    transition: all 0.3s ease;
+}
+
+.recurring-card:hover .recurring-name i {
+    transform: scale(1.05) rotate(5deg);
+}
+
+.recurring-name h4 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0;
+    color: var(--gray-800);
+}
+
+/* Premium Status Badges */
+.status-badge-modern {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 40px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    backdrop-filter: blur(4px);
+}
+
+.status-overdue {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.08));
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    animation: pulseRed 1.5s infinite;
+}
+
+@keyframes pulseRed {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+    50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
+}
+
+.status-today {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.08));
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.status-soon {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(245, 158, 11, 0.05));
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.status-week {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.12), rgba(139, 92, 246, 0.05));
+    color: #8b5cf6;
+    border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.status-two-weeks {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.05));
+    color: #3b82f6;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.status-future {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05));
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.status-paused {
+    background: linear-gradient(135deg, rgba(107, 114, 128, 0.1), rgba(107, 114, 128, 0.05));
+    color: #6b7280;
+    border: 1px solid rgba(107, 114, 128, 0.2);
+}
+
+/* Card Body */
+.recurring-card-body {
+    padding: 18px 20px;
+}
+
+/* Detail Rows */
+.detail-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--gray-200);
+}
+
+.detail-row:last-child {
+    border-bottom: none;
+}
+
+.detail-row i {
+    width: 20px;
+    color: var(--primary);
+    font-size: 0.85rem;
+}
+
+.detail-row span:first-of-type {
+    color: var(--gray-500);
+    font-size: 0.75rem;
+    min-width: 70px;
+}
+
+.detail-row span:last-child {
+    color: var(--gray-700);
+    font-weight: 500;
+    font-size: 0.8rem;
+}
+
+.category-tag {
+    background: var(--gray-200);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 500;
+}
+
+/* Frequency Badge */
+.frequency-badge-premium {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 40px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.frequency-daily-premium { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; }
+.frequency-weekly-premium { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; }
+.frequency-monthly-premium { background: linear-gradient(135deg, #06b6d4, #0891b2); color: white; }
+.frequency-yearly-premium { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; }
+
+/* Countdown Ring */
+.countdown-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 16px 0 12px;
+    padding: 12px;
+    background: var(--gray-100);
+    border-radius: 20px;
+}
+
+.countdown-ring {
+    position: relative;
+    width: 60px;
+    height: 60px;
+    flex-shrink: 0;
+}
+
+.countdonut-svg {
+    transform: rotate(-90deg);
+}
+
+.countdonut-bg {
+    stroke: var(--gray-300);
+}
+
+.countdonut-fill {
+    stroke: var(--primary);
+    stroke-linecap: round;
+    transition: stroke-dasharray 0.5s ease;
+}
+
+.countdown-number {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.2rem;
+    font-weight: 800;
+}
+
+.countdown-info {
+    flex: 1;
+}
+
+.countdown-label {
+    font-size: 0.7rem;
+    color: var(--gray-500);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.countdown-value {
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.countdown-date {
+    font-size: 0.75rem;
+    color: var(--gray-500);
+    margin-top: 4px;
+}
+
+/* Progress Bar */
+.progress-modern {
+    margin: 16px 0 12px;
+}
+
+.progress-modern-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    margin-bottom: 6px;
+    color: var(--gray-500);
+}
+
+.progress-modern-bar {
+    height: 8px;
+    background: var(--gray-200);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.progress-modern-fill {
+    height: 100%;
+    border-radius: 10px;
+    transition: width 0.5s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-modern-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+/* Amount Display */
+.recurring-amount-premium {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--gray-200);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+.amount-label-premium {
+    font-size: 0.7rem;
+    color: var(--gray-500);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.amount-value-premium {
+    font-size: 1.6rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+/* Card Footer */
+.recurring-card-footer {
+    padding: 12px 20px;
+    background: var(--gray-100);
+    border-top: 1px solid var(--gray-200);
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+.card-btn-premium {
+    padding: 8px 18px;
+    border-radius: 40px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.card-btn-edit {
+    background: var(--primary);
+    color: white;
+    box-shadow: 0 2px 6px rgba(124, 58, 237, 0.3);
+}
+
+.card-btn-edit:hover {
+    background: var(--primary-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
+}
+
+.card-btn-delete {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.card-btn-delete:hover {
+    background: #ef4444;
+    color: white;
+    border-color: #ef4444;
+    transform: translateY(-2px);
+}
+
+/* Add Button Premium */
+.btn-add-recurring-premium {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: white;
+    border: none;
+    border-radius: 60px;
+    padding: 12px 28px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 14px rgba(124, 58, 237, 0.35);
+}
+
+.btn-add-recurring-premium:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(124, 58, 237, 0.45);
+}
+
+.btn-add-recurring-premium:active {
+    transform: translateY(1px);
+}
+
+/* Empty State Premium */
+.recurring-empty-premium {
+    text-align: center;
+    padding: 60px 20px;
+    background: linear-gradient(135deg, var(--gray-50), rgba(124, 58, 237, 0.03));
+    border-radius: 32px;
+    border: 2px dashed var(--gray-200);
+    animation: fadeIn 0.5s ease;
+}
+
+.recurring-empty-premium i {
+    font-size: 72px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-light));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    margin-bottom: 20px;
+    display: block;
+}
+
+.recurring-empty-premium h3 {
+    font-size: 1.3rem;
+    margin-bottom: 8px;
+    color: var(--gray-700);
+}
+
+.recurring-empty-premium p {
+    color: var(--gray-500);
+    max-width: 300px;
+    margin: 0 auto;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .recurring-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+    
+    .recurring-stats-bar {
+        gap: 10px;
+    }
+    
+    .recurring-stat-card {
+        padding: 12px 16px;
+    }
+    
+    .recurring-stat-value {
+        font-size: 1.3rem;
+    }
+    
+    .recurring-card-header {
+        padding: 16px;
+    }
+    
+    .recurring-card-body {
+        padding: 14px 16px;
+    }
+    
+    .recurring-name i {
+        width: 36px;
+        height: 36px;
+        font-size: 1rem;
+    }
+    
+    .amount-value-premium {
+        font-size: 1.3rem;
+    }
+    
+    .card-btn-premium {
+        padding: 8px 14px;
+        font-size: 0.7rem;
+    }
+    
+    .countdown-container {
+        padding: 8px;
+    }
+    
+    .countdown-ring {
+        width: 50px;
+        height: 50px;
+    }
+}
+
+/* ===== RECURRING NOTIFICATION STYLES ===== */
+
+.notification-bell {
+    position: relative;
+    cursor: pointer;
+}
+
+.notification-badge {
+    position: absolute;
+    top: -5px;
+    right: -8px;
+    background: #ef4444;
+    color: white;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    animation: bounce 0.5s ease;
+}
+
+@keyframes bounce {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+}
+
+/* Notification Permission Banner */
+.permission-banner {
+    position: fixed;
+    bottom: 80px;
+    right: 20px;
+    background: var(--gray-900);
+    color: white;
+    padding: 14px 20px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    z-index: 1000;
+    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
+    animation: slideInRight 0.3s ease;
+    max-width: 320px;
+}
+
+.permission-banner button {
+    background: var(--primary);
+    border: none;
+    padding: 6px 14px;
+    border-radius: 40px;
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.permission-banner .close-perm {
+    background: transparent;
+    color: var(--gray-400);
+    padding: 4px 8px;
+}
+
+/* Recurring Toast Notification */
+.recurring-toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, var(--gray-800), var(--gray-900));
+    border-left: 4px solid var(--primary);
+    border-radius: 12px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    z-index: 10000;
+    animation: slideInRight 0.3s ease;
+    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
+    max-width: 350px;
+}
+
+.recurring-toast.success { border-left-color: #10b981; }
+.recurring-toast.warning { border-left-color: #f59e0b; }
+.recurring-toast.error { border-left-color: #ef4444; }
+
+.recurring-toast-icon {
+    font-size: 20px;
+}
+
+.recurring-toast-content {
+    flex: 1;
+}
+
+.recurring-toast-title {
+    font-weight: 700;
+    font-size: 13px;
+    margin-bottom: 2px;
+}
+
+.recurring-toast-message {
+    font-size: 11px;
+    opacity: 0.8;
+}
+
+.recurring-toast-close {
+    background: transparent;
+    border: none;
+    color: var(--gray-400);
+    cursor: pointer;
+    font-size: 12px;
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideOutRight {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+}
+
+/* Notification Settings Panel */
+.notification-settings-panel {
+    background: var(--gray-50);
+    border-radius: 20px;
+    padding: 16px;
+    margin-top: 12px;
+    border: 1px solid var(--gray-200);
+}
+
+.notification-setting-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.notification-setting-row:last-child {
+    border-bottom: none;
+}
+
+.notification-setting-row label {
+    font-size: 13px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.notification-setting-row label i {
+    width: 20px;
+    color: var(--primary);
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.custom-recurring-toast {
+    animation: slideInRight 0.3s ease;
+}
+
+.custom-recurring-toast:hover {
+    transform: translateX(-2px);
+    transition: transform 0.2s;
+}
