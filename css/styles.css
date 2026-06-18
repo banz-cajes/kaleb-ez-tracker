@@ -9949,3 +9949,275 @@ body {
     transform: translateX(-2px);
     transition: transform 0.2s;
 }
+
+.card-btn-history {
+    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+    color: white;
+    box-shadow: 0 2px 6px rgba(139, 92, 246, 0.3);
+}
+
+.card-btn-history:hover {
+    background: linear-gradient(135deg, #7c3aed, #6d28d9);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+}
+
+/* Update in your styles.css - remove the icon from detail-row */
+.detail-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--gray-200);
+}
+
+.detail-row span:first-child {
+    color: var(--gray-500);
+    font-size: 0.7rem;
+    min-width: 65px;
+}
+
+.detail-row span:last-child {
+    color: var(--gray-700);
+    font-weight: 500;
+    font-size: 0.8rem;
+}
+
+/* ============================================================
+   PAYMENT TRACKING STYLES
+   ============================================================ */
+
+/* Payment timing badges */
+.payment-timing-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 30px;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.payment-timing-early {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.08));
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.payment-timing-late {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.08));
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    animation: pulseRed 1.5s infinite;
+}
+
+.payment-timing-on-time {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(59, 130, 246, 0.08));
+    color: #3b82f6;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+@keyframes pulseRed {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* Payment history entries */
+.payment-history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    margin-bottom: 8px;
+    background: var(--gray-100);
+    border-radius: 12px;
+    border-left: 3px solid;
+    transition: all 0.2s ease;
+}
+
+.payment-history-item:hover {
+    transform: translateX(4px);
+}
+
+.payment-history-item.early {
+    border-left-color: #10b981;
+}
+
+.payment-history-item.late {
+    border-left-color: #ef4444;
+}
+
+.payment-history-item.on-time {
+    border-left-color: #3b82f6;
+}
+
+.payment-history-date {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--gray-700);
+}
+
+.payment-history-amount {
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.payment-history-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 20px;
+}
+
+.payment-history-badge.early {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+}
+
+.payment-history-badge.late {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+.payment-history-badge.on-time {
+    background: rgba(59, 130, 246, 0.15);
+    color: #3b82f6;
+}
+
+/* Payment stats on cards */
+.payment-stats {
+    display: flex;
+    gap: 12px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--gray-200);
+    font-size: 11px;
+}
+
+.payment-stat {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.payment-stat.early i {
+    color: #10b981;
+}
+
+.payment-stat.late i {
+    color: #ef4444;
+}
+
+.payment-stat.on-time i {
+    color: #3b82f6;
+}
+
+/* Payment gauge */
+.payment-gauge {
+    margin: 12px 0;
+}
+
+.payment-gauge-bar {
+    height: 6px;
+    background: var(--gray-200);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+}
+
+.payment-gauge-early {
+    height: 100%;
+    background: linear-gradient(90deg, #10b981, #34d399);
+    transition: width 0.5s ease;
+}
+
+.payment-gauge-late {
+    height: 100%;
+    background: linear-gradient(90deg, #ef4444, #f87171);
+    transition: width 0.5s ease;
+}
+
+.payment-gauge-on-time {
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6, #60a5fa);
+    transition: width 0.5s ease;
+}
+
+.payment-legend {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin-top: 12px;
+}
+
+.payment-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+}
+
+.payment-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+}
+
+.payment-legend-dot.early {
+    background: #10b981;
+}
+
+.payment-legend-dot.late {
+    background: #ef4444;
+}
+
+.payment-legend-dot.on-time {
+    background: #3b82f6;
+}
+
+/* History button */
+.card-btn-history {
+    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+    color: white;
+    box-shadow: 0 2px 6px rgba(139, 92, 246, 0.3);
+}
+
+.card-btn-history:hover {
+    background: linear-gradient(135deg, #7c3aed, #6d28d9);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+}
+
+/* Clean detail rows without icons */
+.detail-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--gray-200);
+}
+
+.detail-row:last-child {
+    border-bottom: none;
+}
+
+.detail-row span:first-child {
+    color: var(--gray-500);
+    font-size: 0.7rem;
+    min-width: 65px;
+}
+
+.detail-row span:last-child {
+    color: var(--gray-700);
+    font-weight: 500;
+    font-size: 0.8rem;
+}
+
+/* Payment stats summary in modal */
+.payment-stats-summary {
+    display: flex;
+    gap: 16px;
+    margin: 16px 0;
+    padding: 12px;
+    background: var(--gray-100);
+    border-radius: 16px;
+}
