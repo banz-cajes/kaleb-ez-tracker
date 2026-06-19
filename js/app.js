@@ -9724,15 +9724,17 @@ function showPaymentHistoryModal(recurringId) {
     document.body.classList.add('modal-open');
 }
 // ============================================================
-// ULTIMATE RECEIPT SCANNER - MAXIMUM ACCURACY
+// RECEIPT SCANNER - FILL FORM WITH GREEN HIGHLIGHTS
 // ============================================================
 
 let ocrData = null;
 let currentStream = null;
 let facingMode = 'environment';
+let isProcessing = false;
 
-// ===== OPEN RECEIPT SCANNER =====
+// ===== OPEN SCANNER =====
 function scanReceipt() {
+    console.log('📷 Opening receipt scanner...');
     const modal = document.getElementById('receiptScannerModal');
     if (!modal) {
         if (window.sileo) window.sileo.error('Scanner not available', 'Error');
@@ -9747,10 +9749,8 @@ function scanReceipt() {
     if (cameraPlaceholder) {
         cameraPlaceholder.innerHTML = `
             <i class="fas fa-camera" style="font-size: 48px; display: block; margin-bottom: 16px;"></i>
-            <p>Position receipt clearly and tap capture</p>
-            <p style="font-size: 12px; color: var(--gray-500); margin-top: 8px;">
-                <i class="fas fa-lightbulb"></i> Tip: Flat surface + good lighting = better accuracy
-            </p>
+            <p>Take a clear photo of your receipt</p>
+            <p style="font-size: 12px; color: var(--gray-500); margin-top: 8px;">📱 Good lighting = better results</p>
         `;
         cameraPlaceholder.style.display = 'flex';
     }
@@ -9762,7 +9762,8 @@ function scanReceipt() {
     document.body.classList.add('modal-open');
     
     ocrData = null;
-    setTimeout(startCamera, 300);
+    isProcessing = false;
+    setTimeout(() => startCamera(), 300);
 }
 
 function closeReceiptScanner() {
@@ -9774,13 +9775,14 @@ function closeReceiptScanner() {
     stopCamera();
 }
 
+// ===== CAMERA FUNCTIONS =====
 async function startCamera() {
     try {
         const constraints = {
             video: {
                 facingMode: facingMode,
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
+                width: { ideal: 640 },
+                height: { ideal: 480 }
             },
             audio: false
         };
@@ -9793,9 +9795,10 @@ async function startCamera() {
         await video.play();
         
     } catch (error) {
+        console.error('Camera error:', error);
         document.getElementById('cameraPlaceholder').innerHTML = `
             <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: #f59e0b; display: block; margin-bottom: 16px;"></i>
-            <p>Camera not available. Please upload an image instead.</p>
+            <p>Camera not available. Please upload an image.</p>
             <button class="btn-primary" onclick="uploadReceiptImage()" style="margin-top: 12px;">
                 <i class="fas fa-upload"></i> Upload Image
             </button>
@@ -9819,45 +9822,6 @@ function switchCamera() {
     setTimeout(startCamera, 500);
 }
 
-function captureReceipt() {
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const context = canvas.getContext('2d');
-    
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    // Apply preprocessing
-    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-    const processed = preprocessImage(imageData);
-    context.putImageData(processed, 0, 0);
-    
-    canvas.toBlob(function(blob) {
-        processReceiptImage(blob);
-    }, 'image/jpeg', 0.95);
-}
-
-function preprocessImage(imageData) {
-    const data = imageData.data;
-    
-    for (let i = 0; i < data.length; i += 4) {
-        const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-        
-        // Stronger contrast
-        const contrast = 1.8;
-        const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
-        const enhanced = factor * (gray - 128) + 128;
-        
-        const clamped = Math.min(255, Math.max(0, enhanced));
-        data[i] = clamped;
-        data[i + 1] = clamped;
-        data[i + 2] = clamped;
-    }
-    
-    return imageData;
-}
-
 function uploadReceiptImage() {
     document.getElementById('receiptFileInput').click();
 }
@@ -9870,16 +9834,27 @@ function handleReceiptFile(input) {
             const img = new Image();
             img.onload = function() {
                 const canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
+                const maxWidth = 800;
+                const maxHeight = 600;
+                let width = img.width;
+                let height = img.height;
+                
+                if (width > maxWidth) {
+                    height = (maxWidth / width) * height;
+                    width = maxWidth;
+                }
+                if (height > maxHeight) {
+                    width = (maxHeight / height) * width;
+                    height = maxHeight;
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
                 const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0);
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const processed = preprocessImage(imageData);
-                ctx.putImageData(processed, 0, 0);
+                ctx.drawImage(img, 0, 0, width, height);
                 canvas.toBlob(function(blob) {
                     processReceiptImage(blob);
-                }, 'image/jpeg', 0.95);
+                }, 'image/jpeg', 0.85);
             };
             img.src = e.target.result;
         };
@@ -9888,14 +9863,50 @@ function handleReceiptFile(input) {
     input.value = '';
 }
 
+function captureReceipt() {
+    if (isProcessing) return;
+    
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const context = canvas.getContext('2d');
+    
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    canvas.toBlob(function(blob) {
+        processReceiptImage(blob);
+    }, 'image/jpeg', 0.85);
+}
+
+// ===== LOAD TESSERACT =====
+function loadTesseract() {
+    return new Promise((resolve, reject) => {
+        if (typeof Tesseract !== 'undefined') {
+            resolve();
+            return;
+        }
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
+}
+
 // ===== MAIN OCR PROCESSING =====
 async function processReceiptImage(imageData) {
+    if (isProcessing) return;
+    isProcessing = true;
+    
     const loading = document.getElementById('ocrLoading');
     const results = document.getElementById('ocrResults');
     const content = document.getElementById('ocrResultContent');
+    const captureBtn = document.getElementById('captureBtn');
     
     loading.style.display = 'block';
     results.style.display = 'none';
+    if (captureBtn) captureBtn.disabled = true;
     
     try {
         // Show preview
@@ -9925,77 +9936,41 @@ async function processReceiptImage(imageData) {
             placeholder.style.padding = '8px';
         }
         
-        // Try multiple OCR engines
-        let bestResult = null;
-        let bestConfidence = 0;
-        
-        // Method 1: Tesseract.js
-        try {
-            const result = await performOCRWithTesseract(imageData);
-            if (result && result.data && result.data.confidence > bestConfidence) {
-                bestConfidence = result.data.confidence;
-                bestResult = result;
-            }
-        } catch (e) {
-            console.warn('Tesseract failed:', e);
+        // Check if Tesseract is loaded
+        if (typeof Tesseract === 'undefined') {
+            await loadTesseract();
         }
         
-        // Method 2: Try with different languages
-        if (!bestResult || bestConfidence < 60) {
-            try {
-                const result = await performOCRWithTesseract(imageData, 'fil');
-                if (result && result.data && result.data.confidence > bestConfidence) {
-                    bestConfidence = result.data.confidence;
-                    bestResult = result;
+        // Run OCR
+        console.log('🔄 Running OCR...');
+        const result = await Tesseract.recognize(
+            imageData,
+            'eng+fil',
+            {
+                logger: (m) => {
+                    if (m.status === 'recognizing text') {
+                        console.log(`OCR: ${Math.round(m.progress * 100)}%`);
+                    }
                 }
-            } catch (e) {
-                console.warn('Tesseract Filipino failed:', e);
             }
-        }
+        );
         
-        // Method 3: Try with custom whitelist
-        if (!bestResult || bestConfidence < 50) {
-            try {
-                const result = await performOCRWithTesseract(imageData, 'eng', true);
-                if (result && result.data && result.data.confidence > bestConfidence) {
-                    bestConfidence = result.data.confidence;
-                    bestResult = result;
-                }
-            } catch (e) {
-                console.warn('Tesseract custom failed:', e);
-            }
-        }
+        const text = result.data.text;
+        console.log('📝 OCR Text:', text.substring(0, 300));
         
-        // Method 4: Fallback - use a simpler text extraction
-        if (!bestResult || bestConfidence < 40) {
-            try {
-                const result = await performSimpleOCR(imageData);
-                if (result) {
-                    bestResult = result;
-                    bestConfidence = result.data.confidence || 30;
-                }
-            } catch (e) {
-                console.warn('Simple OCR failed:', e);
-            }
-        }
-        
-        if (!bestResult) {
-            throw new Error('All OCR methods failed');
-        }
-        
-        // Parse the text with enhanced parser
-        const parsed = parseReceiptTextUltimate(bestResult.data.text);
+        // Parse the receipt
+        const parsed = parseReceiptTextSimple(text);
         ocrData = parsed;
         
-        // Display results
+        // Display results with "Use Data" button
         loading.style.display = 'none';
         results.style.display = 'block';
         
-        const confidenceColor = bestConfidence > 70 ? '#10b981' : bestConfidence > 40 ? '#f59e0b' : '#ef4444';
-        const confidenceText = bestConfidence > 70 ? 'High' : bestConfidence > 40 ? 'Medium' : 'Low';
+        const confidence = result.data.confidence || 0;
+        const confidenceColor = confidence > 70 ? '#10b981' : confidence > 40 ? '#f59e0b' : '#ef4444';
+        const confidenceText = confidence > 70 ? 'Good' : confidence > 40 ? 'Fair' : 'Low';
         
-        // Build result display
-        let resultHtml = `
+        content.innerHTML = `
             <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--gray-200);">
                 <span><strong>Merchant:</strong></span>
                 <span style="font-weight: 600;">${parsed.merchant || 'Not detected'}</span>
@@ -10004,395 +9979,260 @@ async function processReceiptImage(imageData) {
                 <span><strong>Amount:</strong></span>
                 <span style="color: var(--primary); font-weight: 700; font-size: 1.4rem;">${parsed.amount ? formatCurrency(parsed.amount) : '❌ Not detected'}</span>
             </div>
-            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--gray-200);">
-                <span><strong>Date:</strong></span>
-                <span>${parsed.date ? formatDate(parsed.date) : 'Not detected'}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--gray-200);">
-                <span><strong>Confidence:</strong></span>
-                <span style="color: ${confidenceColor}; font-weight: 600;">${confidenceText} (${Math.round(bestConfidence)}%)</span>
-            </div>
-        `;
-        
-        // Show subtotal and tax if detected
-        if (parsed.subtotal) {
-            resultHtml += `
-                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--gray-200);">
-                    <span><strong>Subtotal:</strong></span>
-                    <span>${formatCurrency(parsed.subtotal)}</span>
-                </div>
-            `;
-        }
-        if (parsed.tax) {
-            resultHtml += `
-                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--gray-200);">
-                    <span><strong>Tax:</strong></span>
-                    <span>${formatCurrency(parsed.tax)}</span>
-                </div>
-            `;
-        }
-        
-        // Show detected amounts for debugging
-        if (parsed.detectedAmounts && parsed.detectedAmounts.length > 0) {
-            resultHtml += `
-                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--gray-200);">
-                    <span><strong>Detected Amounts:</strong></span>
-                    <span style="font-size: 11px; color: var(--gray-500);">${parsed.detectedAmounts.map(a => formatCurrency(a)).join(' | ')}</span>
-                </div>
-            `;
-        }
-        
-        resultHtml += `
             <div style="display: flex; justify-content: space-between; padding: 8px 0;">
-                <span><strong>Raw Text:</strong></span>
-                <span style="font-size: 11px; color: var(--gray-500); max-height: 80px; overflow-y: auto; width: 60%;">${bestResult.data.text.substring(0, 200)}${bestResult.data.text.length > 200 ? '...' : ''}</span>
+                <span><strong>Accuracy:</strong></span>
+                <span style="color: ${confidenceColor}; font-weight: 600;">${confidenceText} (${Math.round(confidence)}%)</span>
+            </div>
+            ${parsed.allAmounts && parsed.allAmounts.length > 0 ? `
+            <div style="margin-top: 12px; padding: 8px; background: var(--gray-100); border-radius: 8px;">
+                <small style="color: var(--gray-500);">
+                    <strong>Detected amounts:</strong> ${parsed.allAmounts.map(a => formatCurrency(a)).join(' | ')}
+                    ${parsed.amount ? ` → <strong style="color: var(--primary);">Selected: ${formatCurrency(parsed.amount)}</strong>` : ''}
+                </small>
+            </div>
+            ` : ''}
+            <div style="display: flex; gap: 12px; margin-top: 16px;">
+                <button class="btn-primary" onclick="useOcrData()" style="flex: 1;">
+                    <i class="fas fa-check"></i> Use Data
+                </button>
+                <button class="btn-secondary" onclick="clearOcrResults()" style="flex: 1;">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
             </div>
         `;
-        
-        content.innerHTML = resultHtml;
         
         if (parsed.amount) {
             if (window.sileo) {
-                window.sileo.success(`✅ Found: ${formatCurrency(parsed.amount)} from ${parsed.merchant || 'receipt'}`, 'Scan Complete');
+                window.sileo.success(`✅ Found: ${formatCurrency(parsed.amount)}`, 'Scan Complete');
             }
         } else {
             if (window.sileo) {
-                window.sileo.warning('⚠️ Could not detect amount. Please enter manually.', 'Manual Entry Needed');
+                window.sileo.warning('⚠️ No amount detected. Please check.', 'Review Needed');
             }
         }
+        
+        if (captureBtn) captureBtn.disabled = false;
+        isProcessing = false;
         
     } catch (error) {
         console.error('OCR error:', error);
         loading.style.display = 'none';
-        if (window.sileo) {
-            window.sileo.error('Failed to read receipt. Please enter manually.', 'OCR Failed');
-        }
-        // Show manual entry option
+        results.style.display = 'block';
         content.innerHTML = `
             <div style="text-align: center; padding: 20px;">
                 <i class="fas fa-exclamation-circle" style="font-size: 48px; color: #ef4444; display: block; margin-bottom: 16px;"></i>
-                <p>Could not read the receipt. Please enter the details manually.</p>
-                <button class="btn-primary" onclick="closeReceiptScanner(); showAddTransactionModal();" style="margin-top: 16px;">
+                <p style="font-size: 16px; font-weight: 600;">Could not read the receipt</p>
+                <p style="color: var(--gray-500); margin: 8px 0 16px;">Please try again or enter manually.</p>
+                <button class="btn-primary" onclick="closeReceiptScanner(); showAddTransactionModal();" style="width: 100%;">
                     <i class="fas fa-plus"></i> Add Manually
                 </button>
             </div>
         `;
-        results.style.display = 'block';
+        if (captureBtn) captureBtn.disabled = false;
+        isProcessing = false;
     }
 }
 
-// ===== PERFORM OCR WITH TESSERACT =====
-async function performOCRWithTesseract(imageData, language = 'eng', customWhitelist = false) {
-    if (typeof Tesseract === 'undefined') {
-        await loadTesseract();
+// ===== USE OCR DATA - FILL FORM WITH GREEN HIGHLIGHTS =====
+function useOcrData() {
+    if (!ocrData) {
+        if (window.sileo) window.sileo.warning('No data to use', 'Error');
+        return;
     }
     
-    let image;
-    if (imageData instanceof Blob) {
-        image = imageData;
-    } else if (typeof imageData === 'string') {
-        const response = await fetch(imageData);
-        image = await response.blob();
-    } else {
-        image = imageData;
-    }
+    console.log('📋 Using data:', ocrData);
     
-    const options = {
-        logger: (m) => {
-            if (m.status === 'recognizing text') {
-                const progress = Math.round(m.progress * 100);
-                if (progress % 10 === 0) {
-                    console.log(`OCR Progress: ${progress}%`);
+    // Close scanner
+    closeReceiptScanner();
+    
+    // Open add transaction modal
+    showAddTransactionModal();
+    
+    // Wait for modal to open
+    setTimeout(() => {
+        try {
+            const categorySelect = document.getElementById('modalCategory');
+            const amountInput = document.getElementById('modalAmount');
+            const dateInput = document.getElementById('modalDate');
+            const noteInput = document.getElementById('modalNote');
+            const typeBtns = document.querySelectorAll('#addTransactionModal .type-btn');
+            
+            let filled = [];
+            
+            // ===== SET AMOUNT with GREEN HIGHLIGHT =====
+            if (amountInput && ocrData.amount) {
+                amountInput.value = ocrData.amount.toFixed(2);
+                highlightElement(amountInput, 'Amount');
+                filled.push(`Amount (${formatCurrency(ocrData.amount)})`);
+                console.log('✅ Amount set:', ocrData.amount);
+            } else if (amountInput) {
+                // Focus on amount field if not detected
+                amountInput.focus();
+                amountInput.placeholder = 'Enter total amount (not detected)';
+                amountInput.style.borderColor = '#ef4444';
+                amountInput.style.backgroundColor = 'rgba(239, 68, 68, 0.05)';
+                setTimeout(() => {
+                    amountInput.style.borderColor = '';
+                    amountInput.style.backgroundColor = '';
+                    amountInput.placeholder = '0.00';
+                }, 5000);
+            }
+            
+            // ===== SET DATE with GREEN HIGHLIGHT =====
+            if (dateInput && ocrData.date) {
+                dateInput.value = ocrData.date;
+                highlightElement(dateInput, 'Date');
+                filled.push('Date');
+            }
+            
+            // ===== SET NOTE with GREEN HIGHLIGHT =====
+            if (noteInput && ocrData.merchant && ocrData.merchant !== 'Unknown') {
+                noteInput.value = `Receipt: ${ocrData.merchant}`;
+                highlightElement(noteInput, 'Merchant');
+                filled.push('Merchant');
+            }
+            
+            // ===== AUTO-SELECT EXPENSE TYPE =====
+            const expenseBtn = document.querySelector('#addTransactionModal .type-btn[data-type="expense"]');
+            if (expenseBtn) {
+                expenseBtn.click();
+                // Highlight the type button
+                expenseBtn.style.transition = 'all 0.3s ease';
+                expenseBtn.style.boxShadow = '0 0 0 3px #10b981';
+                setTimeout(() => {
+                    expenseBtn.style.boxShadow = '';
+                }, 3000);
+            }
+            
+            // ===== AUTO-DETECT CATEGORY with GREEN HIGHLIGHT =====
+            if (categorySelect && ocrData.merchant) {
+                const matched = autoDetectCategory(ocrData.merchant);
+                if (matched) {
+                    categorySelect.value = matched;
+                    highlightElement(categorySelect, 'Category');
+                    filled.push('Category');
                 }
             }
-        }
-    };
-    
-    // Add custom whitelist for better number detection
-    if (customWhitelist) {
-        options.tessedit_char_whitelist = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.,:;!?@#$%^&*()-_+= /₱';
-    }
-    
-    const result = await Tesseract.recognize(image, language, options);
-    return result;
-}
-
-// ===== SIMPLE OCR FALLBACK =====
-async function performSimpleOCR(imageData) {
-    // If Tesseract is available, use it with default settings
-    if (typeof Tesseract !== 'undefined') {
-        let image;
-        if (imageData instanceof Blob) {
-            image = imageData;
-        } else if (typeof imageData === 'string') {
-            const response = await fetch(imageData);
-            image = await response.blob();
-        } else {
-            image = imageData;
-        }
-        
-        const result = await Tesseract.recognize(image, 'eng', {
-            logger: (m) => {
-                if (m.status === 'recognizing text') {
-                    console.log(`Simple OCR: ${Math.round(m.progress * 100)}%`);
+            
+            // ===== SHOW SUCCESS MESSAGE =====
+            if (filled.length > 0) {
+                if (window.sileo) {
+                    window.sileo.success(`✅ Filled: ${filled.join(', ')}. Review and save.`, 'Form Pre-filled');
+                }
+            } else {
+                if (window.sileo) {
+                    window.sileo.warning('No data detected. Please fill manually.', 'Manual Entry');
                 }
             }
-        });
+            
+        } catch (error) {
+            console.error('Error filling form:', error);
+            if (window.sileo) {
+                window.sileo.warning('Could not fill form. Please enter manually.', 'Error');
+            }
+        }
+    }, 500);
+}
+
+// ===== HIGHLIGHT ELEMENT WITH GREEN =====
+function highlightElement(element, fieldName) {
+    if (!element) return;
+    
+    // Save original styles
+    const originalBorder = element.style.borderColor;
+    const originalBg = element.style.backgroundColor;
+    
+    // Apply green highlight
+    element.style.transition = 'all 0.3s ease';
+    element.style.borderColor = '#10b981';
+    element.style.borderWidth = '2px';
+    element.style.borderStyle = 'solid';
+    element.style.backgroundColor = 'rgba(16, 185, 129, 0.08)';
+    element.style.boxShadow = '0 0 0 3px rgba(16, 185, 129, 0.15)';
+    
+    // Create a small label showing what was filled
+    if (fieldName) {
+        const label = document.createElement('small');
+        label.style.cssText = `
+            display: block;
+            color: #10b981;
+            font-size: 11px;
+            font-weight: 600;
+            margin-top: 2px;
+            animation: fadeIn 0.3s ease;
+        `;
+        label.textContent = `✓ ${fieldName} detected`;
         
-        return result;
+        // Insert after the element
+        element.parentNode.insertBefore(label, element.nextSibling);
+        
+        // Remove label after 3 seconds
+        setTimeout(() => {
+            if (label.parentNode) {
+                label.style.transition = 'opacity 0.3s ease';
+                label.style.opacity = '0';
+                setTimeout(() => {
+                    if (label.parentNode) label.remove();
+                }, 300);
+            }
+        }, 3000);
     }
     
-    throw new Error('Tesseract not available');
+    // Remove highlight after 3 seconds
+    setTimeout(() => {
+        element.style.borderColor = originalBorder || '';
+        element.style.borderWidth = '';
+        element.style.borderStyle = '';
+        element.style.backgroundColor = originalBg || '';
+        element.style.boxShadow = '';
+    }, 3000);
 }
 
-function loadTesseract() {
-    return new Promise((resolve, reject) => {
-        if (typeof Tesseract !== 'undefined') {
-            resolve();
-            return;
-        }
-        
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js';
-        script.onload = resolve;
-        script.onerror = reject;
-        document.head.appendChild(script);
-    });
-}
-
-// ===== ULTIMATE RECEIPT TEXT PARSER =====
-function parseReceiptTextUltimate(text) {
-    const lines = text.split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0);
-    
-    console.log('📄 Raw lines:', lines);
+// ===== SIMPLE RECEIPT PARSER =====
+function parseReceiptTextSimple(text) {
+    console.log('📄 Parsing receipt...');
     
     let merchant = '';
     let amount = null;
     let date = null;
-    let subtotal = null;
-    let tax = null;
-    let detectedAmounts = [];
+    let allAmounts = [];
     
-    // ============================================
-    // STEP 1: Extract ALL numbers with currency
-    // ============================================
+    const lines = text.split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
     
-    const allNumbers = [];
-    
-    // Find all numbers with currency symbols
-    const currencyPatterns = [
-        /₱\s*([\d,]+\.?\d*)/gi,
-        /PHP\s*([\d,]+\.?\d*)/gi,
-        /Php\s*([\d,]+\.?\d*)/gi,
-        /P\s*([\d,]+\.?\d*)/gi,
-    ];
-    
-    for (const pattern of currencyPatterns) {
-        const matches = text.match(pattern);
-        if (matches) {
-            for (const match of matches) {
-                const num = match.match(/[\d,]+\.?\d*/);
-                if (num) {
-                    const val = parseFloat(num[0].replace(/,/g, ''));
-                    if (!isNaN(val) && val > 0) {
-                        allNumbers.push({ value: val, text: match, type: 'currency' });
-                    }
-                }
-            }
-        }
-    }
-    
-    // Find all decimal numbers
-    const decimalPattern = /\b(\d{1,3}(?:,\d{3})*\.\d{2})\b/g;
-    const decimalMatches = text.match(decimalPattern);
-    if (decimalMatches) {
-        for (const match of decimalMatches) {
-            const val = parseFloat(match.replace(/,/g, ''));
-            if (!isNaN(val) && val > 0) {
-                allNumbers.push({ value: val, text: match, type: 'decimal' });
-            }
-        }
-    }
-    
-    // Find all whole numbers that could be amounts
-    const wholePattern = /\b(\d{1,3}(?:,\d{3})*)\b/g;
-    const wholeMatches = text.match(wholePattern);
-    if (wholeMatches) {
-        for (const match of wholeMatches) {
-            const val = parseFloat(match.replace(/,/g, ''));
-            if (!isNaN(val) && val > 100) { // Only consider amounts > 100
-                allNumbers.push({ value: val, text: match, type: 'whole' });
-            }
-        }
-    }
-    
-    // Sort by value (largest first)
-    allNumbers.sort((a, b) => b.value - a.value);
-    
-    // ============================================
-    // STEP 2: Find the amount using multiple strategies
-    // ============================================
-    
-    // Strategy 1: Look for TOTAL/AMOUNT keywords
-    const totalKeywords = [
-        /(?:TOTAL|AMOUNT|DUE|PAYMENT|NET|GRAND\s+TOTAL|BALANCE|SUM|TOTAL\s+AMOUNT)\s*[:.]?\s*[₱PHP]?\s*([\d,]+\.?\d*)/i,
-        /(?:TOTAL|AMOUNT|DUE|PAYMENT|NET|GRAND\s+TOTAL|BALANCE|SUM|TOTAL\s+AMOUNT)\s*[:.]?\s*([\d,]+\.?\d*)\s*[₱PHP]?/i,
-    ];
-    
-    for (const pattern of totalKeywords) {
-        const match = text.match(pattern);
-        if (match) {
-            const val = parseFloat(match[1].replace(/,/g, ''));
-            if (!isNaN(val) && val > 0) {
-                amount = Math.round(val * 100) / 100;
-                break;
-            }
-        }
-    }
-    
-    // Strategy 2: Look at the largest currency amount
-    if (!amount) {
-        const currencyNumbers = allNumbers.filter(n => n.type === 'currency');
-        if (currencyNumbers.length > 0) {
-            // The largest currency amount is likely the total
-            amount = Math.round(currencyNumbers[0].value * 100) / 100;
-            detectedAmounts = currencyNumbers.map(n => n.value);
-        }
-    }
-    
-    // Strategy 3: Look at all decimal numbers (largest is likely total)
-    if (!amount) {
-        const decimalNumbers = allNumbers.filter(n => n.type === 'decimal');
-        if (decimalNumbers.length > 0) {
-            // Sort descending
-            decimalNumbers.sort((a, b) => b.value - a.value);
-            // If there's only one, use it
-            if (decimalNumbers.length === 1) {
-                amount = Math.round(decimalNumbers[0].value * 100) / 100;
-            } else if (decimalNumbers.length > 1) {
-                // If there are multiple, the largest is likely the total
-                // But check if the second largest is a subtotal
-                const largest = decimalNumbers[0].value;
-                const secondLargest = decimalNumbers[1].value;
-                // If they're close (within 20%), use the largest
-                if (largest - secondLargest < largest * 0.2) {
-                    amount = Math.round(largest * 100) / 100;
-                } else {
-                    // Otherwise, the largest is likely the total
-                    amount = Math.round(largest * 100) / 100;
-                }
-            }
-            detectedAmounts = decimalNumbers.map(n => n.value);
-        }
-    }
-    
-    // Strategy 4: Find any number with .00 or .99 pattern (common receipt totals)
-    if (!amount) {
-        const pattern = /\b(\d{1,3}(?:,\d{3})*\.(?:00|99|50|75|25|49|51))\b/g;
-        const matches = text.match(pattern);
-        if (matches) {
-            const amounts = matches
-                .map(m => parseFloat(m.replace(/,/g, '')))
-                .filter(n => !isNaN(n) && n > 0)
-                .sort((a, b) => b - a);
-            if (amounts.length > 0) {
-                amount = Math.round(amounts[0] * 100) / 100;
-            }
-        }
-    }
-    
-    // Strategy 5: Try to find "x items" pattern (total = quantity * price)
-    if (!amount) {
-        const itemPattern = /(\d+)\s*[@x]\s*[₱PHP]?\s*([\d,]+\.?\d*)/gi;
-        let total = 0;
-        let matches;
-        while ((matches = itemPattern.exec(text)) !== null) {
-            const qty = parseInt(matches[1]);
-            const price = parseFloat(matches[2].replace(/,/g, ''));
-            if (!isNaN(qty) && !isNaN(price) && qty > 0 && price > 0) {
-                total += qty * price;
-            }
-        }
-        if (total > 0) {
-            amount = Math.round(total * 100) / 100;
-        }
-    }
-    
-    // Strategy 6: Last resort - find the largest number in the text
-    if (!amount) {
-        const allMatches = text.match(/\b(\d{1,3}(?:,\d{3})*\.?\d*)\b/g);
-        if (allMatches) {
-            const amounts = allMatches
-                .map(m => parseFloat(m.replace(/,/g, '')))
-                .filter(n => !isNaN(n) && n > 0 && n < 1000000)
-                .sort((a, b) => b - a);
-            if (amounts.length > 0 && amounts[0] > 10) {
-                amount = Math.round(amounts[0] * 100) / 100;
-                // If amount is very large (likely not a receipt), try the next one
-                if (amount > 1000000 && amounts.length > 1) {
-                    amount = Math.round(amounts[1] * 100) / 100;
-                }
-            }
-        }
-    }
-    
-    // ============================================
-    // STEP 3: Find merchant name
-    // ============================================
-    
-    const skipWords = ['receipt', 'invoice', 'thank', 'you', 'store', 'shop', 'market', 'supermarket', 
-                       'grocery', 'restaurant', 'cafe', 'coffee', 'bar', 'pharmacy', 'drugstore',
-                       'merchant', 'business', 'company', 'corp', 'inc', 'ltd', 'llc', 'total', 'amount',
-                       'subtotal', 'tax', 'vat', 'gst', 'payment', 'cash', 'change', 'due', 'balance'];
-    
-    // Try first 5 lines
+    // ===== FIND MERCHANT =====
     for (let i = 0; i < Math.min(5, lines.length); i++) {
         const line = lines[i];
-        if (line.length > 3) {
-            const lowerLine = line.toLowerCase();
-            // Check if it looks like a merchant name
-            const hasSkipWord = skipWords.some(word => lowerLine.includes(word));
-            const hasNumbers = /\d/.test(line);
-            
-            if (!hasSkipWord && !hasNumbers && line.length > 2 && line.length < 60) {
-                merchant = cleanMerchantName(line);
-                break;
-            }
+        const hasNumbers = /\d/.test(line);
+        const isDate = /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{1,2}\/\d{1,2})/i.test(line);
+        
+        if (!hasNumbers && !isDate && line.length > 3 && line.length < 60) {
+            merchant = line
+                .replace(/^(RECEIPT|INVOICE|BILL|ORDER|PAYMENT|CHECKOUT|STORE|SHOP)\s*/i, '')
+                .replace(/\s*(RECEIPT|INVOICE|BILL|ORDER|PAYMENT|CHECKOUT|STORE|SHOP)$/i, '')
+                .trim();
+            if (merchant.length > 2) break;
         }
     }
     
-    // If no merchant found, try first line that's not all caps (common in receipts)
-    if (!merchant) {
+    if (!merchant || merchant.length < 2) {
         for (const line of lines) {
-            const upperCount = (line.match(/[A-Z]/g) || []).length;
-            const totalChars = line.replace(/[^a-zA-Z]/g, '').length;
-            const upperRatio = totalChars > 0 ? upperCount / totalChars : 0;
-            
-            if (upperRatio < 0.8 && line.length > 3 && !/\d/.test(line)) {
-                merchant = cleanMerchantName(line);
-                break;
+            if (line.length > 3 && line.length < 60 && !/\d/.test(line)) {
+                merchant = line.trim();
+                if (merchant.length > 2) break;
             }
         }
     }
+    if (!merchant || merchant.length < 2) merchant = 'Unknown';
     
-    if (!merchant && lines.length > 0) {
-        merchant = cleanMerchantName(lines[0]);
-        if (merchant.length < 3) merchant = 'Unknown';
-    }
-    
-    // ============================================
-    // STEP 4: Find date
-    // ============================================
-    
+    // ===== FIND DATE =====
     const datePatterns = [
-        /(\d{1,2})\/(\d{1,2})\/(\d{4})/g,
-        /(\d{1,2})\/(\d{1,2})\/(\d{2})/g,
-        /(\d{4})-(\d{2})-(\d{2})/g,
-        /(\d{2})-(\d{2})-(\d{4})/g,
-        /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{4})/gi,
-        /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})/gi,
+        /(\d{1,2})\/(\d{1,2})\/(\d{4})/,
+        /(\d{1,2})\/(\d{1,2})\/(\d{2})/,
+        /(\d{4})-(\d{2})-(\d{2})/,
+        /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{4})/i,
+        /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})/i,
     ];
     
     for (const pattern of datePatterns) {
@@ -10405,168 +10245,115 @@ function parseReceiptTextUltimate(text) {
             }
         }
     }
-    
     if (!date) {
         const today = new Date();
         date = today.toISOString().split('T')[0];
     }
     
-    // ============================================
-    // STEP 5: Find subtotal and tax
-    // ============================================
+    // ===== FIND AMOUNT =====
     
-    const subtotalMatch = text.match(/(?:SUBTOTAL|SUB TOTAL|SUB-TOTAL)\s*[:.]?\s*[₱PHP]?\s*([\d,]+\.?\d*)/i);
-    if (subtotalMatch) {
-        subtotal = parseFloat(subtotalMatch[1].replace(/,/g, ''));
-        if (!isNaN(subtotal) && subtotal > 0) {
-            subtotal = Math.round(subtotal * 100) / 100;
+    // Strategy 1: Look for "TOTAL" keyword
+    const totalPatterns = [
+        /TOTAL\s*[:.]?\s*[₱PHP]?\s*([\d,]+\.?\d*)/i,
+        /TOTAL\s+AMOUNT\s*[:.]?\s*[₱PHP]?\s*([\d,]+\.?\d*)/i,
+        /AMOUNT\s+DUE\s*[:.]?\s*[₱PHP]?\s*([\d,]+\.?\d*)/i,
+        /GRAND\s+TOTAL\s*[:.]?\s*[₱PHP]?\s*([\d,]+\.?\d*)/i,
+        /BALANCE\s+DUE\s*[:.]?\s*[₱PHP]?\s*([\d,]+\.?\d*)/i,
+    ];
+    
+    for (const pattern of totalPatterns) {
+        const match = text.match(pattern);
+        if (match) {
+            const val = parseFloat(match[1].replace(/,/g, ''));
+            if (!isNaN(val) && val > 0 && val < 1000000) {
+                amount = Math.round(val * 100) / 100;
+                console.log(`✅ Found amount: ${amount} from TOTAL`);
+                break;
+            }
         }
     }
     
-    const taxMatch = text.match(/(?:TAX|VAT|GST|SERVICE CHARGE|SERVICE TAX)\s*[:.]?\s*[₱PHP]?\s*([\d,]+\.?\d*)/i);
-    if (taxMatch) {
-        tax = parseFloat(taxMatch[1].replace(/,/g, ''));
-        if (!isNaN(tax) && tax > 0) {
-            tax = Math.round(tax * 100) / 100;
+    // Strategy 2: Look for ₱ with number (largest)
+    if (!amount) {
+        const currencyPattern = /[₱PHP]\s*([\d,]+\.?\d*)/gi;
+        let match;
+        let amounts = [];
+        while ((match = currencyPattern.exec(text)) !== null) {
+            const val = parseFloat(match[1].replace(/,/g, ''));
+            if (!isNaN(val) && val > 0 && val < 1000000) {
+                amounts.push(val);
+            }
+        }
+        if (amounts.length > 0) {
+            amounts.sort((a, b) => b - a);
+            amount = Math.round(amounts[0] * 100) / 100;
+            console.log(`✅ Found amount from ₱: ${amount}`);
         }
     }
     
-    // ============================================
-    // STEP 6: Validate and clean amount
-    // ============================================
-    
-    // If amount is suspiciously large (over 1M), try to find a smaller amount
-    if (amount && amount > 1000000) {
-        const smallerAmounts = detectedAmounts.filter(a => a < 1000000 && a > 0);
-        if (smallerAmounts.length > 0) {
-            amount = Math.round(Math.max(...smallerAmounts) * 100) / 100;
+    // Strategy 3: Look for .00 pattern
+    if (!amount) {
+        const pattern = /\b(\d{1,3}(?:,\d{3})*\.00)\b/g;
+        let match;
+        let amounts = [];
+        while ((match = pattern.exec(text)) !== null) {
+            const val = parseFloat(match[1].replace(/,/g, ''));
+            if (!isNaN(val) && val > 0 && val < 1000000) {
+                amounts.push(val);
+            }
+        }
+        if (amounts.length > 0) {
+            amounts.sort((a, b) => b - a);
+            amount = Math.round(amounts[0] * 100) / 100;
+            console.log(`✅ Found amount from .00: ${amount}`);
         }
     }
     
-    // If amount is too small (under 10), try to find a larger amount
-    if (amount && amount < 10 && detectedAmounts.length > 0) {
-        const largerAmounts = detectedAmounts.filter(a => a > 10);
-        if (largerAmounts.length > 0) {
-            amount = Math.round(Math.max(...largerAmounts) * 100) / 100;
+    // Strategy 4: Look for largest decimal
+    if (!amount) {
+        const decimalPattern = /\b(\d{1,3}(?:,\d{3})*\.\d{2})\b/g;
+        let match;
+        let amounts = [];
+        while ((match = decimalPattern.exec(text)) !== null) {
+            const val = parseFloat(match[1].replace(/,/g, ''));
+            if (!isNaN(val) && val > 0 && val < 1000000) {
+                amounts.push(val);
+            }
+        }
+        if (amounts.length > 0) {
+            amounts.sort((a, b) => b - a);
+            amount = Math.round(amounts[0] * 100) / 100;
+            console.log(`✅ Found amount from decimals: ${amount}`);
         }
     }
     
-    // Clean amount
-    if (amount) {
-        amount = Math.round(amount * 100) / 100;
-        if (amount <= 0) amount = null;
+    // Collect all amounts
+    const allMatches = text.match(/\b(\d{1,3}(?:,\d{3})*\.?\d*)\b/g);
+    if (allMatches) {
+        for (const m of allMatches) {
+            const val = parseFloat(m.replace(/,/g, ''));
+            if (!isNaN(val) && val > 0 && val < 1000000) {
+                allAmounts.push(Math.round(val * 100) / 100);
+            }
+        }
+        allAmounts = [...new Set(allAmounts)].sort((a, b) => b - a);
+        if (allAmounts.length > 10) allAmounts = allAmounts.slice(0, 10);
     }
     
-    console.log('📊 Parsed result:', { merchant, amount, date, subtotal, tax, detectedAmounts });
+    if (amount && amount < 1) amount = null;
+    
+    console.log('📊 Final:', { merchant, amount, date });
     
     return {
-        merchant: merchant || 'Unknown',
+        merchant: merchant,
         amount: amount,
         date: date,
-        subtotal: subtotal,
-        tax: tax,
-        detectedAmounts: detectedAmounts,
+        allAmounts: allAmounts,
         rawText: text
     };
 }
 
-function cleanMerchantName(name) {
-    let cleaned = name
-        .replace(/^(RECEIPT|INVOICE|BILL|ORDER|CHECKOUT|PAYMENT)\s*[:.]?\s*/i, '')
-        .replace(/\s*(RECEIPT|INVOICE|BILL|ORDER|CHECKOUT|PAYMENT)$/i, '')
-        .replace(/^[\s#\d]+/, '')
-        .replace(/[\s#\d]+$/, '')
-        .trim();
-    
-    if (cleaned.length < 2) return name;
-    return cleaned;
-}
-
-// ===== USE OCR DATA =====
-function useOcrData() {
-    if (!ocrData) {
-        if (window.sileo) window.sileo.warning('No receipt data to use', 'Error');
-        return;
-    }
-    
-    console.log('📋 Using OCR data:', ocrData);
-    
-    closeReceiptScanner();
-    showAddTransactionModal();
-    
-    setTimeout(() => {
-        try {
-            const categorySelect = document.getElementById('modalCategory');
-            const amountInput = document.getElementById('modalAmount');
-            const dateInput = document.getElementById('modalDate');
-            const noteInput = document.getElementById('modalNote');
-            
-            // Set amount
-            if (amountInput && ocrData.amount) {
-                amountInput.value = ocrData.amount.toFixed(2);
-                highlightElement(amountInput);
-                console.log('✅ Amount set:', ocrData.amount);
-            } else {
-                if (window.sileo) {
-                    window.sileo.warning('No amount detected. Please enter manually.', 'Manual Entry');
-                }
-            }
-            
-            // Set date
-            if (dateInput && ocrData.date) {
-                dateInput.value = ocrData.date;
-                highlightElement(dateInput);
-            }
-            
-            // Set note with merchant
-            if (noteInput && ocrData.merchant && ocrData.merchant !== 'Unknown') {
-                let note = `Receipt: ${ocrData.merchant}`;
-                if (ocrData.subtotal) note += ` | Subtotal: ${formatCurrency(ocrData.subtotal)}`;
-                if (ocrData.tax) note += ` | Tax: ${formatCurrency(ocrData.tax)}`;
-                noteInput.value = note;
-                highlightElement(noteInput);
-            }
-            
-            // Auto-detect category
-            if (categorySelect && ocrData.merchant) {
-                const matched = autoDetectCategory(ocrData.merchant);
-                if (matched) {
-                    categorySelect.value = matched;
-                    highlightElement(categorySelect);
-                }
-            }
-            
-            // Auto-select expense type
-            const expenseBtn = document.querySelector('#addTransactionModal .type-btn[data-type="expense"]');
-            if (expenseBtn) expenseBtn.click();
-            
-            // Show success message
-            if (ocrData.amount) {
-                if (window.sileo) {
-                    window.sileo.success(`✅ Found: ${formatCurrency(ocrData.amount)} from ${ocrData.merchant || 'receipt'}`, 'Scan Complete');
-                }
-            }
-            
-        } catch (error) {
-            console.error('Error filling form:', error);
-            if (window.sileo) {
-                window.sileo.warning('Could not auto-fill. Please fill manually.', 'Manual Entry');
-            }
-        }
-    }, 600);
-}
-
-function highlightElement(element) {
-    if (!element) return;
-    element.style.borderColor = '#10b981';
-    element.style.backgroundColor = 'rgba(16, 185, 129, 0.05)';
-    element.style.transition = 'all 0.3s ease';
-    setTimeout(() => {
-        element.style.borderColor = '';
-        element.style.backgroundColor = '';
-    }, 3000);
-}
-
+// ===== AUTO-DETECT CATEGORY =====
 function autoDetectCategory(merchant) {
     if (!merchant) return null;
     
@@ -10574,31 +10361,25 @@ function autoDetectCategory(merchant) {
     const categories = expenseCats || [];
     
     const keywordMap = {
-        'restaurant': ['🍔 Food & Groceries', '🍽️ Dining Out'],
-        'cafe': ['☕ Coffee & Drinks', '🍽️ Dining Out'],
+        'restaurant': ['🍔 Food & Groceries'],
+        'cafe': ['☕ Coffee & Drinks'],
         'coffee': ['☕ Coffee & Drinks'],
         'starbucks': ['☕ Coffee & Drinks'],
-        'supermarket': ['🍔 Food & Groceries', '🛍️ Shopping'],
+        'supermarket': ['🍔 Food & Groceries'],
         'grocery': ['🍔 Food & Groceries'],
         'puregold': ['🍔 Food & Groceries'],
         'savemore': ['🍔 Food & Groceries'],
-        'robinsons': ['🛍️ Shopping', '🍔 Food & Groceries'],
-        'sm': ['🛍️ Shopping', '🍔 Food & Groceries'],
-        'landmark': ['🛍️ Shopping'],
+        'sm': ['🛍️ Shopping'],
+        'robinsons': ['🛍️ Shopping'],
         'gas': ['🚗 Gas / Fuel'],
         'petrol': ['🚗 Gas / Fuel'],
         'shell': ['🚗 Gas / Fuel'],
         'petron': ['🚗 Gas / Fuel'],
-        'unioil': ['🚗 Gas / Fuel'],
-        'grab': ['🚗 Grab / Angkas Driver', '🚆 Public Transport'],
+        'grab': ['🚗 Grab / Angkas Driver'],
         'angkas': ['🚗 Grab / Angkas Driver'],
         'foodpanda': ['📦 Delivery (Foodpanda/Grab)'],
-        'shopping': ['🛍️ Shopping'],
-        'mall': ['🛍️ Shopping'],
         'pharmacy': ['💊 Health & Medicine'],
         'mercury': ['💊 Health & Medicine'],
-        'doctor': ['💊 Health & Medicine'],
-        'hospital': ['💊 Health & Medicine', '🚑 Emergency'],
         'electric': ['⚡ Electricity Bill'],
         'meralco': ['⚡ Electricity Bill'],
         'water': ['💧 Water Bill'],
@@ -10609,34 +10390,30 @@ function autoDetectCategory(merchant) {
         'phone': ['📱 Phone Bill'],
         'globe': ['📱 Phone Bill'],
         'smart': ['📱 Phone Bill'],
-        'dito': ['📱 Phone Bill'],
         'rent': ['🏠 Rent / Mortgage'],
-        'school': ['📚 Education / School', '📚 Student Needs'],
-        'book': ['📖 Books / Hobbies'],
+        'school': ['📚 Education / School'],
         'clothing': ['👕 Clothing'],
         'clothes': ['👕 Clothing'],
         'shoes': ['👟 Shoes'],
         'salon': ['💇 Haircut / Salon'],
         'barber': ['💇 Haircut / Salon'],
         'gym': ['🏋️ Gym / Fitness'],
-        'entertainment': ['🎮 Entertainment / Games'],
         'movies': ['🎮 Entertainment / Games'],
         'cinema': ['🎮 Entertainment / Games'],
         'netflix': ['📺 Streaming Subscriptions'],
         'spotify': ['📺 Streaming Subscriptions'],
-        'jollibee': ['🍔 Food & Groceries', '🍽️ Dining Out'],
-        'mcdonald': ['🍔 Food & Groceries', '🍽️ Dining Out'],
-        'kfc': ['🍔 Food & Groceries', '🍽️ Dining Out'],
-        'chowking': ['🍔 Food & Groceries', '🍽️ Dining Out'],
-        'greenwich': ['🍔 Food & Groceries', '🍽️ Dining Out'],
-        '7-eleven': ['🍔 Food & Groceries', '🛍️ Shopping'],
-        'ministop': ['🍔 Food & Groceries', '🛍️ Shopping'],
-        'mcdo': ['🍔 Food & Groceries', '🍽️ Dining Out'],
-        'grabpay': ['📦 Delivery (Foodpanda/Grab)'],
+        'jollibee': ['🍔 Food & Groceries'],
+        'mcdonald': ['🍔 Food & Groceries'],
+        'kfc': ['🍔 Food & Groceries'],
+        'chowking': ['🍔 Food & Groceries'],
+        '7-eleven': ['🍔 Food & Groceries'],
+        'ministop': ['🍔 Food & Groceries'],
         'gcash': ['💸 Transfer to GCash'],
-        'paymaya': ['💸 Transfer to GCash'],
         'shopee': ['🛍️ Shopping'],
         'lazada': ['🛍️ Shopping'],
+        'salary': ['💼 Monthly Salary'],
+        'payroll': ['💼 Monthly Salary'],
+        'income': ['💼 Monthly Salary'],
     };
     
     for (const [keyword, categoryList] of Object.entries(keywordMap)) {
@@ -10656,13 +10433,15 @@ function clearOcrResults() {
     ocrData = null;
     document.getElementById('ocrResults').style.display = 'none';
     document.getElementById('ocrLoading').style.display = 'none';
-    document.getElementById('cameraPlaceholder').innerHTML = `
-        <i class="fas fa-camera" style="font-size: 48px; display: block; margin-bottom: 16px;"></i>
-        <p>Position receipt clearly and tap capture</p>
-        <p style="font-size: 12px; color: var(--gray-500); margin-top: 8px;">
-            <i class="fas fa-lightbulb"></i> Tip: Good lighting improves accuracy
-        </p>
-    `;
+    const placeholder = document.getElementById('cameraPlaceholder');
+    if (placeholder) {
+        placeholder.innerHTML = `
+            <i class="fas fa-camera" style="font-size: 48px; display: block; margin-bottom: 16px;"></i>
+            <p>Take a clear photo of your receipt</p>
+            <p style="font-size: 12px; color: var(--gray-500); margin-top: 8px;">📱 Good lighting = better results</p>
+        `;
+        placeholder.style.display = 'flex';
+    }
     document.getElementById('video').style.display = 'none';
 }
 
@@ -10675,3 +10454,4 @@ window.handleReceiptFile = handleReceiptFile;
 window.useOcrData = useOcrData;
 window.clearOcrResults = clearOcrResults;
 window.switchCamera = switchCamera;
+window.autoDetectCategory = autoDetectCategory;
