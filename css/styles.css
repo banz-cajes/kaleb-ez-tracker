@@ -10221,3 +10221,80 @@ body {
     background: var(--gray-100);
     border-radius: 16px;
 }
+
+/* ===== RECEIPT SCANNER STYLES ===== */
+
+#cameraPreview {
+    position: relative;
+    background: var(--gray-100);
+    border-radius: 16px;
+    overflow: hidden;
+    min-height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#cameraPreview video,
+#cameraPreview img {
+    width: 100%;
+    max-height: 400px;
+    object-fit: contain;
+}
+
+#cameraPreview .camera-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border: 2px dashed rgba(255, 255, 255, 0.5);
+    border-radius: 12px;
+    width: 80%;
+    height: 60%;
+    pointer-events: none;
+}
+
+/* Scanner loading animation */
+.scanner-loading {
+    display: inline-block;
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--gray-200);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+/* OCR Results */
+#ocrResultContent {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+#ocrResultContent > div {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+#ocrResultContent > div:last-child {
+    border-bottom: none;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    #receiptScannerModal .modal-content {
+        max-width: 100%;
+        margin: 0;
+        border-radius: 0;
+        max-height: 100vh;
+        padding: 16px;
+    }
+    
+    #cameraPreview {
+        min-height: 150px;
+    }
+    
+    #cameraPreview video {
+        max-height: 300px;
+    }
+}

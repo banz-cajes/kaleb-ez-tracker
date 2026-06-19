@@ -25,7 +25,10 @@
 
     <!-- SweetAlert2 for beautiful confirmation dialogs -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
+<!-- Enhanced OCR Libraries -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<!-- For image preprocessing -->
+<script src="https://cdn.jsdelivr.net/npm/opencv.js@4.5.5/opencv.min.js"></script>
     <!-- Fonts & Icons -->
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
@@ -384,6 +387,9 @@
                     <button class="btn-primary" onclick="showAddTransactionModal()" style="padding: 12px 24px;">
                         <i class="fas fa-plus"></i> Add Transaction
                     </button>
+                    <button class="btn-secondary" onclick="scanReceipt()" style="padding: 12px 24px;">
+                <i class="fas fa-camera"></i> Scan Receipt
+            </button>
                 </div>
             </div>
             <div class="transactions-table-container">
@@ -1290,7 +1296,62 @@
     <script src="js/notifications.js"></script>
     <script src="js/analytics.js"></script>
     <script src="js/app.js"></script>
-
+<!-- Receipt Scanner Modal -->
+<div id="receiptScannerModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 500px;">
+        <button class="modal-close" onclick="closeReceiptScanner()">
+            <i class="fas fa-times"></i>
+        </button>
+        <h2><i class="fas fa-receipt"></i> Scan Receipt</h2>
+        
+        <div id="scannerArea" style="text-align: center;">
+            <!-- Camera/Upload Area -->
+            <div id="cameraPreview" style="position: relative; margin: 16px 0; background: var(--gray-100); border-radius: 16px; overflow: hidden; min-height: 200px; display: flex; align-items: center; justify-content: center;">
+                <video id="video" autoplay muted style="width: 100%; max-height: 400px; object-fit: contain;"></video>
+                <canvas id="canvas" style="display: none;"></canvas>
+                <div id="cameraPlaceholder" style="color: var(--gray-400); padding: 40px;">
+                    <i class="fas fa-camera" style="font-size: 48px; display: block; margin-bottom: 16px;"></i>
+                    <p>Position receipt in frame and tap capture</p>
+                </div>
+            </div>
+            
+            <!-- Controls -->
+            <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 16px 0;">
+                <button class="btn-primary" id="captureBtn" onclick="captureReceipt()" style="min-width: 120px;">
+                    <i class="fas fa-camera"></i> Capture
+                </button>
+                <button class="btn-secondary" onclick="uploadReceiptImage()" style="min-width: 120px;">
+                    <i class="fas fa-upload"></i> Upload Image
+                </button>
+                <button class="btn-secondary" onclick="switchCamera()" style="min-width: 120px;">
+                    <i class="fas fa-sync-alt"></i> Switch Camera
+                </button>
+            </div>
+            
+            <input type="file" id="receiptFileInput" accept="image/*" style="display: none;" onchange="handleReceiptFile(this)">
+            
+            <!-- OCR Results -->
+            <div id="ocrResults" style="display: none; margin-top: 16px; padding: 16px; background: var(--gray-100); border-radius: 16px; text-align: left;">
+                <h4 style="margin-bottom: 12px;"><i class="fas fa-check-circle" style="color: #10b981;"></i> Extracted Data</h4>
+                <div id="ocrResultContent"></div>
+                <div style="display: flex; gap: 12px; margin-top: 16px;">
+                    <button class="btn-primary" onclick="useOcrData()" style="flex: 1;">
+                        <i class="fas fa-check"></i> Use Data
+                    </button>
+                    <button class="btn-secondary" onclick="clearOcrResults()" style="flex: 1;">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Loading -->
+            <div id="ocrLoading" style="display: none; padding: 20px;">
+                <div class="spinner" style="margin: 0 auto;"></div>
+                <p style="margin-top: 12px; color: var(--gray-500);">Reading receipt...</p>
+            </div>
+        </div>
+    </div>
+</div>
     <script>
         window.addEventListener('error', function (e) {
             console.error('[App]', e.error || e.message || e);
