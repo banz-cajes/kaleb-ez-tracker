@@ -10298,3 +10298,54 @@ body {
         max-height: 300px;
     }
 }
+
+/* Better chart colors - ensure contrast */
+.chart-container canvas {
+    filter: contrast(1.1) saturate(1.2);
+}
+
+/* Category legend colors - add hover effect */
+.category-color {
+    transition: all 0.3s ease;
+}
+
+.category-color:hover {
+    transform: scale(1.2);
+    filter: brightness(1.2);
+}
+
+/* Doughnut chart segment hover effect */
+.chartjs-render-monitor {
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+}
+
+.category-legend-modern {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    margin-top: 16px;
+    padding: 12px;
+    background: var(--gray-50);
+    border-radius: 12px;
+    border: 1px solid var(--gray-200);
+}
+
+.legend-item-modern {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--gray-700);
+}
+
+.legend-dot-modern {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    border: 1px solid rgba(0,0,0,0.08);
+}
+
+.legend-label-modern {
+    font-weight: 500;
+}
