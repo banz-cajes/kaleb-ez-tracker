@@ -12,7 +12,8 @@ function renderTransactionsPaginated() {
 }
 
 
-
+// Global variables - Add this line
+window.recurringTransactions = [];
 
 // Call this inside your existing DOMContentLoaded
 if (typeof document !== 'undefined') {
@@ -269,6 +270,7 @@ async function loadUserData() {
             window.savingsGoal = data.savingsGoal || 0;
             window.goals = data.goals || [];
             window.bills = data.bills || [];
+             window.recurringTransactions = data.recurringTransactions || [];
             console.log(`✅ Loaded ${window.transactions.length} transactions from Firebase`);
         } else {
             console.log('No existing data for this user');
@@ -282,15 +284,16 @@ async function loadUserData() {
 
         await migrateOldTransactions();
 
-        // Save to cache
-        localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
-            transactions: window.transactions,
-            budgetLimit: window.budgetLimit,
-            debtGoal: window.debtGoal,
-            savingsGoal: window.savingsGoal,
-            goals: window.goals,
-            bills: window.bills
-        }));
+        // In loadUserData(), around line 160
+localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
+    transactions: window.transactions,
+    budgetLimit: window.budgetLimit,
+    debtGoal: window.debtGoal,
+    savingsGoal: window.savingsGoal,
+    goals: window.goals,
+    bills: window.bills,
+    recurringTransactions: window.recurringTransactions // ✅ ADD THIS
+}));
 
         await loadUserAvatar();
 
@@ -338,6 +341,7 @@ async function loadUserData() {
                 window.savingsGoal = data.savingsGoal || 0;
                 window.goals = data.goals || [];
                 window.bills = data.bills || [];
+                window.recurringTransactions = data.recurringTransactions || [];
                 console.log(`✅ Loaded ${window.transactions.length} transactions from cache`);
 
                 loadUserAvatar();
@@ -2405,7 +2409,7 @@ function filterTransactions() { render(); }
 
 // Export/Import functions
 function exportData() {
-    const data = { transactions: window.transactions, goals: window.goals, bills: window.bills, settings: { budgetLimit: window.budgetLimit, debtGoal: window.debtGoal, savingsGoal: window.savingsGoal, currency: window.currentCurrency }, exportDate: new Date().toISOString(), version: '2.0' };
+    const data = { transactions: window.transactions, goals: window.goals, bills: window.bills, recurringTransactions: window.recurringTransactions, settings: { budgetLimit: window.budgetLimit, debtGoal: window.debtGoal, savingsGoal: window.savingsGoal, currency: window.currentCurrency }, exportDate: new Date().toISOString(), version: '2.0' };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -2444,6 +2448,7 @@ function importData() {
                     window.transactions = data.transactions || [];
                     window.goals = data.goals || [];
                     window.bills = data.bills || [];
+                    window.recurringTransactions = data.recurringTransactions || [];
                     window.budgetLimit = data.settings?.budgetLimit || 0;
                     window.debtGoal = data.settings?.debtGoal || 0;
                     window.savingsGoal = data.settings?.savingsGoal || 0;
@@ -2466,6 +2471,7 @@ function clearAllData() {
         window.editIndex = -1;
         window.goals = [];
         window.bills = [];
+        window.recurringTransactions = [];
         window.budgetLimit = 0;
         window.debtGoal = 0;
         window.savingsGoal = 0;
@@ -2486,7 +2492,7 @@ function closeBackupModal() {
 }
 
 function backupToLocal() {
-    const backupData = { transactions: window.transactions, budgetLimit: window.budgetLimit, debtGoal: window.debtGoal, savingsGoal: window.savingsGoal, goals: window.goals, bills: window.bills, backupDate: new Date().toISOString() };
+    const backupData = { transactions: window.transactions, budgetLimit: window.budgetLimit, debtGoal: window.debtGoal, savingsGoal: window.savingsGoal, goals: window.goals, bills: window.bills, recurringTransactions: window.recurringTransactions, backupDate: new Date().toISOString() };
     localStorage.setItem('cajesBackup', JSON.stringify(backupData));
     localStorage.setItem('lastBackup', new Date().toLocaleString());
     const lastBackupSpan = document.getElementById('lastBackup');
@@ -2506,6 +2512,7 @@ function restoreFromBackup() {
             window.savingsGoal = data.savingsGoal || 0;
             window.goals = data.goals || [];
             window.bills = data.bills || [];
+            window.recurringTransactions = data.recurringTransactions || [];
             saveToFirebase();
             closeBackupModal();
             if (window.sileo) window.sileo.success('Data restored from backup!', 'Success');
@@ -2526,6 +2533,7 @@ function restoreFromFile(input) {
             window.savingsGoal = data.savingsGoal || 0;
             window.goals = data.goals || [];
             window.bills = data.bills || [];
+            window.recurringTransactions = data.recurringTransactions || []; 
             saveToFirebase();
             closeBackupModal();
             if (window.sileo) window.sileo.success('Data imported successfully!', 'Success');
@@ -2758,6 +2766,7 @@ window.recoverFromFirebase = async function () {
             window.transactions = data.transactions || [];
             window.goals = data.goals || [];
             window.bills = data.bills || [];
+            window.recurringTransactions = data.recurringTransactions || [];
             window.budgetLimit = data.monthlyBudget || 0;
             window.debtGoal = data.debtGoal || 0;
             window.savingsGoal = data.savingsGoal || 0;
@@ -6510,526 +6519,11 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 // ===== RECURRING TRANSACTIONS FEATURE =====
-
-/**
- * Create a new recurring transaction template
- */
-// Create recurring modal (enhanced)
-function createRecurringTransaction() {
-    window.editRecurringIndex = -1;
-    
-    // Reset form
-    document.getElementById('recurringName').value = '';
-    document.getElementById('recurringAmount').value = '';
-    document.getElementById('recurringType').value = 'expense';
-    document.getElementById('recurringFrequency').value = 'monthly';
-    document.getElementById('recurringDayOfMonth').value = '1';
-    document.getElementById('recurringActive').checked = true;
-    
-    // Update categories based on type
-    updateRecurringCategories();
-    
-    // Update modal title and hide delete button
-    document.getElementById('recurringModalTitle').innerHTML = '<i class="fas fa-plus"></i> Add Recurring Transaction';
-    document.getElementById('recurringDeleteBtn').style.display = 'none';
-    
-    // Show modal
-    document.getElementById('recurringModal').classList.add('active');
-}
-
-// Close recurring modal
-function closeRecurringModal() {
-    document.getElementById('recurringModal').classList.remove('active');
-    window.editRecurringIndex = -1;
-}
-
-// Update categories based on selected type
-function updateRecurringCategories() {
-    const type = document.getElementById('recurringType').value;
-    const categorySelect = document.getElementById('recurringCategory');
-    let categories = [];
-    
-    if (type === 'expense') categories = expenseCats;
-    else if (type === 'income') categories = incomeCats;
-    else categories = savingsCats;
-    
-    categorySelect.innerHTML = categories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
-}
-
-// Edit recurring transaction
-function editRecurringTransaction(index) {
-    window.editRecurringIndex = index;
-    const recurring = window.recurringTransactions[index];
-    
-    if (!recurring) return;
-    
-    // Populate form
-    document.getElementById('recurringName').value = recurring.name;
-    document.getElementById('recurringAmount').value = recurring.amount;
-    document.getElementById('recurringType').value = recurring.type;
-    document.getElementById('recurringFrequency').value = recurring.frequency;
-    document.getElementById('recurringDayOfMonth').value = recurring.dayOfMonth;
-    document.getElementById('recurringActive').checked = recurring.isActive;
-    
-    // Update categories and set the value
-    updateRecurringCategories();
-    document.getElementById('recurringCategory').value = recurring.category;
-    
-    // Update modal title and show delete button
-    document.getElementById('recurringModalTitle').innerHTML = '<i class="fas fa-edit"></i> Edit Recurring Transaction';
-    document.getElementById('recurringDeleteBtn').style.display = 'block';
-    
-    // Show modal
-    document.getElementById('recurringModal').classList.add('active');
-}
-
-// Save recurring transaction (enhanced)
-function saveRecurringTransaction() {
-    const name = document.getElementById('recurringName').value.trim();
-    const amount = parseFloat(document.getElementById('recurringAmount').value);
-    const type = document.getElementById('recurringType').value;
-    const category = document.getElementById('recurringCategory').value;
-    const frequency = document.getElementById('recurringFrequency').value;
-    const dayOfMonth = parseInt(document.getElementById('recurringDayOfMonth').value);
-    const isActive = document.getElementById('recurringActive').checked;
-    
-    if (!name) {
-        if (window.sileo) window.sileo.error('Please enter a transaction name', 'Error');
-        return;
-    }
-    
-    if (isNaN(amount) || amount <= 0) {
-        if (window.sileo) window.sileo.error('Please enter a valid amount', 'Error');
-        return;
-    }
-    
-    if (!category) {
-        if (window.sileo) window.sileo.error('Please select a category', 'Error');
-        return;
-    }
-    
-    const recurring = {
-        id: `recurring_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        name,
-        amount,
-        category,
-        type,
-        frequency,
-        dayOfMonth,
-        isActive,
-        createdAt: new Date().toISOString(),
-        lastGenerated: null
-    };
-    
-    if (window.editRecurringIndex === -1) {
-        if (!window.recurringTransactions) window.recurringTransactions = [];
-        window.recurringTransactions.push(recurring);
-        if (window.sileo) window.sileo.success('✅ Recurring transaction created!', 'Success');
-    } else {
-        recurring.id = window.recurringTransactions[window.editRecurringIndex].id;
-        recurring.createdAt = window.recurringTransactions[window.editRecurringIndex].createdAt;
-        window.recurringTransactions[window.editRecurringIndex] = recurring;
-        if (window.sileo) window.sileo.success('✅ Recurring transaction updated!', 'Success');
-    }
-    
-    saveToFirebase();
-    closeRecurringModal();
-    renderRecurringTransactions();
-}
-
-// Delete recurring from edit modal
-function deleteRecurringFromEdit() {
-    if (window.editRecurringIndex === -1) return;
-    
-    if (confirm('Delete this recurring transaction template? This cannot be undone.')) {
-        window.recurringTransactions.splice(window.editRecurringIndex, 1);
-        saveToFirebase();
-        closeRecurringModal();
-        renderRecurringTransactions();
-        if (window.sileo) window.sileo.success('Recurring transaction deleted!', 'Deleted');
-    }
-}
-
-// Delete recurring transaction
-function deleteRecurringTransaction(index) {
-    if (confirm('Delete this recurring transaction? This cannot be undone.')) {
-        window.recurringTransactions.splice(index, 1);
-        saveToFirebase();
-        renderRecurringTransactions();
-        if (window.sileo) window.sileo.success('Recurring transaction deleted!', 'Deleted');
-    }
-}
-
-// Add event listener for type change
-document.addEventListener('DOMContentLoaded', function() {
-    const recurringType = document.getElementById('recurringType');
-    if (recurringType) {
-        recurringType.addEventListener('change', updateRecurringCategories);
-    }
-});
-
-/**
- * Save recurring transaction template
- */
-function saveRecurringTransaction() {
-    const name = document.getElementById('recurringName')?.value || '';
-    const amount = parseFloat(document.getElementById('recurringAmount')?.value || 0);
-    const category = document.getElementById('recurringCategory')?.value || '';
-    const type = document.getElementById('recurringType')?.value || 'expense';
-    const frequency = document.getElementById('recurringFrequency')?.value || 'monthly';
-    const dayOfMonth = parseInt(document.getElementById('recurringDayOfMonth')?.value || 1);
-    const isActive = document.getElementById('recurringActive')?.checked || true;
-
-    if (!name || !category || amount <= 0) {
-        if (window.sileo) window.sileo.error('Please fill all required fields', 'Error');
-        return;
-    }
-
-    const recurring = {
-        id: `recurring_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        name,
-        amount,
-        category,
-        type,
-        frequency,
-        dayOfMonth,
-        isActive,
-        createdAt: new Date().toISOString(),
-        lastGenerated: null
-    };
-
-    if (editRecurringIndex === -1) {
-        window.recurringTransactions.push(recurring);
-        if (window.sileo) window.sileo.success('✅ Recurring transaction created!', 'Success');
-    } else {
-        recurring.id = window.recurringTransactions[editRecurringIndex].id;
-        recurring.createdAt = window.recurringTransactions[editRecurringIndex].createdAt;
-        window.recurringTransactions[editRecurringIndex] = recurring;
-        if (window.sileo) window.sileo.success('✅ Recurring transaction updated!', 'Success');
-    }
-
-    saveToFirebase();
-    closeRecurringModal();
-    renderRecurringTransactions();
-}
-
-/**
- * Delete recurring transaction template
- */
-function deleteRecurringTransaction(index) {
-    if (confirm('Delete this recurring transaction template?')) {
-        window.recurringTransactions.splice(index, 1);
-        saveToFirebase();
-        renderRecurringTransactions();
-        if (window.sileo) window.sileo.success('Recurring transaction deleted!', 'Deleted');
-    }
-}
-
-/**
- * Edit recurring transaction
- */
-function editRecurringTransaction(index) {
-    editRecurringIndex = index;
-    const recurring = window.recurringTransactions[index];
-    
-    document.getElementById('recurringName').value = recurring.name;
-    document.getElementById('recurringAmount').value = recurring.amount;
-    document.getElementById('recurringCategory').value = recurring.category;
-    document.getElementById('recurringType').value = recurring.type;
-    document.getElementById('recurringFrequency').value = recurring.frequency;
-    document.getElementById('recurringDayOfMonth').value = recurring.dayOfMonth;
-    document.getElementById('recurringActive').checked = recurring.isActive;
-    
-    // Update form title and add edit indicator
-    const titleEl = document.getElementById('recurringModalTitle');
-    if (titleEl) titleEl.textContent = `Edit Recurring Transaction`;
-    
-    // Show edit status indicator
-    const statusEl = document.getElementById('recurringFormStatus');
-    if (statusEl) {
-        statusEl.className = 'form-status edit-mode';
-        statusEl.innerHTML = '✏️ <strong>Editing</strong> - Changes will update the template';
-        statusEl.style.display = 'flex';
-    }
-    
-    // Show delete button in edit mode
-    const deleteBtn = document.getElementById('recurringDeleteBtn');
-    if (deleteBtn) {
-        deleteBtn.style.display = 'block';
-    }
-    
-    const modal = document.getElementById('recurringModal') || createRecurringModal();
-    modal.classList.add('active');
-}
-
-/**
- * Delete from edit modal
- */
-function deleteRecurringFromEdit() {
-    if (editRecurringIndex === -1) return;
-    if (confirm('Delete this recurring transaction template? This cannot be undone.')) {
-        window.recurringTransactions.splice(editRecurringIndex, 1);
-        saveToFirebase();
-        closeRecurringModal();
-        renderRecurringTransactions();
-        if (window.sileo) window.sileo.success('Recurring transaction deleted!', 'Deleted');
-    }
-}
-
-/**
- * Process recurring transactions - auto-generate due transactions
- */
-// Enhanced processRecurringTransactions with payment timing tracking
-function processRecurringTransactions() {
-    if (!window.recurringTransactions || window.recurringTransactions.length === 0) return;
-    
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-    const currentDay = today.getDate();
-    const currentMonth = today.getMonth();
-    const currentYear = today.getFullYear();
-    
-    let newTransactions = [];
-    let updated = false;
-    
-    window.recurringTransactions.forEach((recurring, idx) => {
-        if (!recurring.isActive) return;
-        
-        const lastGen = recurring.lastGenerated ? new Date(recurring.lastGenerated) : null;
-        let shouldGenerate = false;
-        let dueDate = null;
-        
-        switch (recurring.frequency) {
-            case 'daily':
-                if (!lastGen || lastGen.toDateString() !== today.toDateString()) {
-                    shouldGenerate = true;
-                    dueDate = todayStr;
-                }
-                break;
-            case 'weekly':
-                if (!lastGen || !isSameWeek(lastGen, today)) {
-                    shouldGenerate = true;
-                    dueDate = todayStr;
-                }
-                break;
-            case 'monthly':
-                const targetDay = recurring.dayOfMonth || 1;
-                if (currentDay === targetDay) {
-                    if (!lastGen || lastGen.getMonth() !== currentMonth || lastGen.getFullYear() !== currentYear) {
-                        shouldGenerate = true;
-                        dueDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
-                    }
-                }
-                break;
-            case 'yearly':
-                const targetDayYear = recurring.dayOfMonth || 1;
-                if (currentDay === targetDayYear && currentMonth === (recurring.createdAt ? new Date(recurring.createdAt).getMonth() : 0)) {
-                    if (!lastGen || lastGen.getFullYear() !== currentYear) {
-                        shouldGenerate = true;
-                        dueDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(targetDayYear).padStart(2, '0')}`;
-                    }
-                }
-                break;
-        }
-        
-        if (shouldGenerate) {
-            const transactionId = `${recurring.id}_${Date.now()}`;
-            newTransactions.push({
-                id: transactionId,
-                type: recurring.type,
-                category: recurring.category,
-                amount: recurring.amount,
-                date: todayStr,
-                note: `[Auto] ${recurring.name}`,
-                createdAt: new Date().toISOString(),
-                recurringId: recurring.id
-            });
-            
-            // Track payment timing
-            trackPaymentTiming(recurring.id, transactionId, todayStr, dueDate);
-            
-            window.recurringTransactions[idx].lastGenerated = new Date().toISOString();
-            updated = true;
-        }
-    });
-    
-    if (newTransactions.length > 0) {
-        if (!window.transactions) window.transactions = [];
-        window.transactions = [...newTransactions, ...window.transactions];
-        if (typeof saveToFirebase === 'function') saveToFirebase();
-        if (typeof render === 'function') render();
-        console.log(`Auto-generated ${newTransactions.length} recurring transactions with payment tracking`);
-    }
-    
-    if (updated && typeof saveToFirebase === 'function') saveToFirebase();
-}
-
-/**
- * Helper: Check if two dates are the same day
- */
-function isSameDay(date1, date2) {
-    return date1.toDateString() === date2.toDateString();
-}
-
-/**
- * Helper: Get day of week (0-6)
- */
-function getDayOfWeek(date) {
-    return date.getDay();
-}
-
+// Legacy recurring handlers were consolidated into the single reliable implementation loaded later in this file.
 // ============================================================
 // RENDER RECURRING TRANSACTIONS - ENHANCED
 // ============================================================
 
-function renderRecurringTransactions() {
-    const container = document.getElementById('recurringContainer');
-    const emptyState = document.getElementById('recurringEmpty');
-    
-    if (!window.recurringTransactions) window.recurringTransactions = [];
-    
-    if (!container) {
-        console.log('recurringContainer not found yet, will retry');
-        setTimeout(renderRecurringTransactions, 500);
-        return;
-    }
-    
-    if (window.recurringTransactions.length === 0) {
-        if (container) container.style.display = 'none';
-        if (emptyState) emptyState.style.display = 'block';
-        updateRecurringStatsBar();
-        return;
-    }
-    
-    if (container) container.style.display = 'grid';
-    if (emptyState) emptyState.style.display = 'none';
-    
-    const sortedTransactions = [...window.recurringTransactions].sort((a, b) => {
-        const priority = { 'overdue': 0, 'today': 1, 'soon': 2, 'week': 3, 'two-weeks': 4, 'future': 5, 'paused': 6 };
-        const priorityA = priority[getPremiumRecurringStatus(a).type] || 4;
-        const priorityB = priority[getPremiumRecurringStatus(b).type] || 4;
-        if (priorityA !== priorityB) return priorityA - priorityB;
-        return getDaysUntilNext(a) - getDaysUntilNext(b);
-    });
-    
-    const getTypeIcon = (type) => {
-        const icons = { expense: 'fa-shopping-cart', income: 'fa-arrow-up', savings: 'fa-piggy-bank' };
-        return icons[type] || 'fa-tag';
-    };
-    
-    const getTypeColor = (type) => {
-        const colors = { expense: '#ef4444', income: '#10b981', savings: '#3b82f6' };
-        return colors[type] || '#6b7280';
-    };
-    
-    const circumference = 2 * Math.PI * 45;
-    
-    const html = sortedTransactions.map((recurring) => {
-        const actualIndex = window.recurringTransactions.findIndex(r => r.id === recurring.id);
-        const typeColor = getTypeColor(recurring.type);
-        const status = getPremiumRecurringStatus(recurring);
-        const daysUntil = getDaysUntilNext(recurring);
-        const nextDateFormatted = formatNextDatePremium(recurring);
-        
-        let progressColor = '#10b981';
-        if (daysUntil <= 3) progressColor = '#ef4444';
-        else if (daysUntil <= 7) progressColor = '#f59e0b';
-        else if (daysUntil <= 14) progressColor = '#8b5cf6';
-        
-        const strokeDashoffset = circumference - (Math.min(100, Math.max(0, (daysUntil / 30) * 100)) / 100) * circumference;
-        
-        // Payment stats display
-        const stats = recurring.paymentStats;
-        const showPaymentStats = stats && stats.totalPayments > 0;
-        const lastPaymentTiming = stats?.lastPaymentTiming;
-        
-        // Get timing badge for last payment
-        let timingBadge = '';
-        if (lastPaymentTiming === 'early') {
-            timingBadge = '<span class="payment-timing-badge payment-timing-early"><i class="fas fa-calendar-check"></i> Early</span>';
-        } else if (lastPaymentTiming === 'late') {
-            timingBadge = '<span class="payment-timing-badge payment-timing-late"><i class="fas fa-calendar-exclamation"></i> Late</span>';
-        } else if (lastPaymentTiming === 'on-time') {
-            timingBadge = '<span class="payment-timing-badge payment-timing-on-time"><i class="fas fa-check"></i> On time</span>';
-        }
-        
-        return `
-            <div class="recurring-card" data-status="${status.type}">
-                <div class="recurring-card-header">
-                    <div class="recurring-name">
-                        <i class="${getTypeIcon(recurring.type)}" style="color: ${typeColor}; background: ${typeColor}10;"></i>
-                        <h4>${escapeHtml(recurring.name)}</h4>
-                    </div>
-                    <div class="status-badge-modern status-${status.type}">
-                        <i class="fas ${status.icon}"></i> ${status.text}
-                    </div>
-                </div>
-                
-                <div class="recurring-card-body">
-                    <div class="detail-row">
-                        <span>Category</span>
-                        <span class="category-tag">${escapeHtml(recurring.category)}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span>Frequency</span>
-                        <span class="frequency-badge-premium ${getFrequencyClass(recurring.frequency)}">
-                            ${recurring.frequency.charAt(0).toUpperCase() + recurring.frequency.slice(1)}
-                        </span>
-                    </div>
-                    
-                    ${timingBadge ? `<div class="detail-row"><span>Last</span>${timingBadge}</div>` : ''}
-                    
-                    ${recurring.isActive && daysUntil >= 0 ? `
-                    <div class="countdown-container">
-                        <div class="countdown-ring">
-                            <svg width="60" height="60" viewBox="0 0 120 120" class="countdonut-svg">
-                                <circle cx="60" cy="60" r="45" fill="none" stroke="var(--gray-300)" stroke-width="8" class="countdonut-bg"/>
-                                <circle cx="60" cy="60" r="45" fill="none" stroke="${progressColor}" stroke-width="8" 
-                                    stroke-dasharray="${circumference}" stroke-dashoffset="${strokeDashoffset}" 
-                                    class="countdonut-fill" transform="rotate(-90 60 60)"/>
-                            </svg>
-                            <div class="countdown-number" style="color: ${progressColor};">${daysUntil}</div>
-                        </div>
-                        <div class="countdown-info">
-                            <div class="countdown-label">NEXT</div>
-                            <div class="countdown-value">${nextDateFormatted}</div>
-                            <div class="countdown-date">in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}</div>
-                        </div>
-                    </div>
-                    ` : ''}
-                    
-                    ${showPaymentStats ? `
-                    <div class="payment-stats">
-                        <div class="payment-stat early"><i class="fas fa-check-circle"></i> ${stats.earlyPercentage.toFixed(0)}%</div>
-                        <div class="payment-stat on-time"><i class="fas fa-minus-circle"></i> ${stats.onTimePercentage.toFixed(0)}%</div>
-                        <div class="payment-stat late"><i class="fas fa-exclamation-circle"></i> ${stats.latePercentage.toFixed(0)}%</div>
-                    </div>
-                    ` : ''}
-                    
-                    <div class="recurring-amount-premium">
-                        <span class="amount-label-premium">AMOUNT</span>
-                        <span class="amount-value-premium">${formatCurrency(recurring.amount)}</span>
-                    </div>
-                </div>
-                
-                <div class="recurring-card-footer">
-                    <button class="card-btn-premium card-btn-edit" onclick="editRecurringTransaction(${actualIndex})">
-                        <i class="fas fa-edit"></i> Edit
-                    </button>
-                    <button class="card-btn-premium card-btn-history" onclick="showPaymentHistoryModal('${recurring.id}')">
-                        <i class="fas fa-chart-line"></i> History
-                    </button>
-                    <button class="card-btn-premium card-btn-delete" onclick="deleteRecurringTransaction(${actualIndex})">
-                        <i class="fas fa-trash"></i> Delete
-                    </button>
-                </div>
-            </div>
-        `;
-    }).join('');
-    
-    container.innerHTML = html;
-    updateRecurringStatsBar();
-}
 /**
  * Close recurring modal
  */
@@ -7166,24 +6660,63 @@ function createRecurringModal() {
         syncInProgress: false,
         retryQueue: [],
         
-        async init() {
-            if (this.initialized) return;
-            console.log('📱 Initializing Unified Offline Manager...');
-            
-            if (window.db && firebase.firestore) {
+        // ===== FIXED: UNIFIED OFFLINE MANAGER INIT =====
+async init() {
+    if (this.initialized) return;
+    console.log('📱 Initializing Unified Offline Manager...');
+    
+    if (window.db && firebase.firestore) {
+        try {
+            // Use the newer cache API instead of deprecated enablePersistence
+            if (firebase.firestore.settings) {
+                // Check if we're using the new SDK
+                const settings = window.db.settings || {};
+                
+                // Modern approach: Use cache settings
                 try {
                     await window.db.enablePersistence({ synchronizeTabs: true });
-                    console.log('✅ Firestore persistence enabled');
-                } catch (err) {
-                    if (err.code === 'failed-precondition') console.warn('Multiple tabs open');
-                    else if (err.code === 'unimplemented') console.warn('Persistence not supported');
+                    console.log('✅ Firestore persistence enabled (legacy)');
+                } catch (persistError) {
+                    // If enablePersistence fails, try using cache settings
+                    console.log('⚠️ enablePersistence failed, trying cache settings...');
+                    try {
+                        // Use the new cache setting if available
+                        const db = firebase.firestore();
+                        // Use the existing db instance with settings
+                        if (typeof db.settings === 'function') {
+                            db.settings({
+                                cache: {
+                                    enabled: true,
+                                    tabSynchronizationEnabled: true
+                                }
+                            });
+                            console.log('✅ Firestore cache enabled via settings');
+                        } else {
+                            console.warn('⚠️ Cache settings not available, using memory only');
+                        }
+                    } catch (cacheError) {
+                        console.warn('⚠️ Cache settings failed:', cacheError);
+                    }
                 }
+            } else {
+                // Fallback: just log and continue
+                console.log('ℹ️ Firestore persistence not configured, using memory cache');
             }
-            
-            this.setupNetworkListeners();
-            this.startAutoBackup();
-            this.initialized = true;
-        },
+        } catch (err) {
+            if (err.code === 'failed-precondition') {
+                console.warn('⚠️ Multiple tabs open - persistence limited');
+            } else if (err.code === 'unimplemented') {
+                console.warn('⚠️ Persistence not supported by browser');
+            } else {
+                console.warn('⚠️ Persistence error:', err);
+            }
+        }
+    }
+    
+    this.setupNetworkListeners();
+    this.startAutoBackup();
+    this.initialized = true;
+},
         
         setupNetworkListeners() {
             const indicator = this.createIndicator();
@@ -7676,474 +7209,9 @@ function showLoadingSkeleton(view = 'dashboard') {
 })();
 
 // ===== FIX RECURRING TRANSACTIONS - ADD THIS AT VERY BOTTOM =====
+// Legacy recurring handlers were consolidated into the single reliable implementation loaded later in this file.
 
-// Make sure recurringTransactions array exists
-if (typeof window.recurringTransactions === 'undefined') {
-    window.recurringTransactions = [];
-}
 
-// Fix: Ensure renderRecurringTransactions works
-function renderRecurringTransactions() {
-    const container = document.getElementById('recurringContainer');
-    const emptyState = document.getElementById('recurringEmpty');
-    
-    if (!container) {
-        console.log('recurringContainer not found yet, will retry');
-        setTimeout(renderRecurringTransactions, 500);
-        return;
-    }
-    
-    if (!window.recurringTransactions) window.recurringTransactions = [];
-    
-    if (window.recurringTransactions.length === 0) {
-        if (container) container.style.display = 'none';
-        if (emptyState) emptyState.style.display = 'block';
-        return;
-    }
-    
-    if (container) container.style.display = 'grid';
-    if (emptyState) emptyState.style.display = 'none';
-    
-    const getTypeIcon = (type) => {
-        const icons = { expense: 'fa-shopping-cart', income: 'fa-arrow-up', savings: 'fa-piggy-bank' };
-        return icons[type] || 'fa-tag';
-    };
-    
-    const getTypeColor = (type) => {
-        const colors = { expense: '#ef4444', income: '#10b981', savings: '#3b82f6' };
-        return colors[type] || '#6b7280';
-    };
-    
-    const getFrequencyClass = (frequency) => {
-        const classes = { daily: 'frequency-daily', weekly: 'frequency-weekly', monthly: 'frequency-monthly', yearly: 'frequency-yearly' };
-        return classes[frequency] || 'frequency-monthly';
-    };
-    
-    const formatFrequency = (freq) => freq.charAt(0).toUpperCase() + freq.slice(1);
-    
-    const html = window.recurringTransactions.map((recurring, index) => {
-        const typeColor = getTypeColor(recurring.type);
-        const frequencyClass = getFrequencyClass(recurring.frequency);
-        
-        return `
-            <div class="recurring-card">
-                <div class="recurring-card-header">
-                    <div class="recurring-name">
-                        <i class="${getTypeIcon(recurring.type)}" style="color: ${typeColor}; background: ${typeColor}10;"></i>
-                        <h4>${escapeHtml(recurring.name)}</h4>
-                    </div>
-                    <span class="status-badge ${recurring.isActive ? 'active' : 'inactive'}">
-                        <i class="fas fa-${recurring.isActive ? 'play' : 'pause'}"></i>
-                        ${recurring.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                </div>
-                <div class="recurring-card-body">
-                    <div class="recurring-details">
-                        <div class="detail-row">
-                            <i class="fas fa-tag"></i>
-                            <span>Category:</span>
-                            <span class="category-tag">${escapeHtml(recurring.category)}</span>
-                        </div>
-                        <div class="detail-row">
-                            <i class="fas fa-calendar-alt"></i>
-                            <span>Frequency:</span>
-                            <span class="frequency-badge ${frequencyClass}">${formatFrequency(recurring.frequency)}</span>
-                        </div>
-                        ${recurring.frequency !== 'daily' && recurring.frequency !== 'weekly' ? `
-                        <div class="detail-row">
-                            <i class="fas fa-calendar-day"></i>
-                            <span>Day:</span>
-                            <span>Day ${recurring.dayOfMonth} of month</span>
-                        </div>
-                        ` : ''}
-                    </div>
-                    <div class="recurring-amount">
-                        <span class="amount-label">Amount</span>
-                        <span class="amount-value">${formatCurrency(recurring.amount)}</span>
-                    </div>
-                </div>
-                <div class="recurring-card-footer">
-                    <button class="card-btn edit" onclick="editRecurringTransaction(${index})">
-                        <i class="fas fa-edit"></i> Edit
-                    </button>
-                    <button class="card-btn delete" onclick="deleteRecurringTransaction(${index})">
-                        <i class="fas fa-trash"></i> Delete
-                    </button>
-                </div>
-            </div>
-        `;
-    }).join('');
-    
-    container.innerHTML = html;
-}
-
-// Fix: Edit recurring transaction
-function editRecurringTransaction(index) {
-    const recurring = window.recurringTransactions[index];
-    if (!recurring) return;
-    
-    const modal = document.getElementById('recurringModal');
-    if (!modal) {
-        alert('Please use the "Add Recurring" button to create new recurring transactions');
-        return;
-    }
-    
-    // Fill the form
-    document.getElementById('recurringName').value = recurring.name;
-    document.getElementById('recurringAmount').value = recurring.amount;
-    document.getElementById('recurringType').value = recurring.type;
-    document.getElementById('recurringFrequency').value = recurring.frequency;
-    document.getElementById('recurringDayOfMonth').value = recurring.dayOfMonth;
-    document.getElementById('recurringActive').checked = recurring.isActive;
-    
-    // Update categories based on type
-    const type = recurring.type;
-    let categories = [];
-    if (type === 'expense') categories = expenseCats;
-    else if (type === 'income') categories = incomeCats;
-    else categories = savingsCats;
-    
-    const categorySelect = document.getElementById('recurringCategory');
-    categorySelect.innerHTML = categories.map(cat => `<option value="${cat}" ${cat === recurring.category ? 'selected' : ''}>${cat}</option>`).join('');
-    
-    // Change title and show delete button
-    document.getElementById('recurringModalTitle').innerHTML = '<i class="fas fa-edit"></i> Edit Recurring Transaction';
-    const deleteBtn = document.getElementById('recurringDeleteBtn');
-    if (deleteBtn) deleteBtn.style.display = 'block';
-    
-    // Store edit index
-    window._editingRecurringIndex = index;
-    
-    // Show modal
-    modal.classList.add('active');
-    modal.style.display = 'flex';
-    document.body.classList.add('modal-open');
-}
-
-// Fix: Delete recurring transaction
-function deleteRecurringTransaction(index) {
-    if (confirm('Delete this recurring transaction? This cannot be undone.')) {
-        window.recurringTransactions.splice(index, 1);
-        if (typeof saveToFirebase === 'function') saveToFirebase();
-        renderRecurringTransactions();
-        if (window.sileo) window.sileo.success('Recurring transaction deleted!', 'Deleted');
-    }
-}
-
-// Fix: Delete from edit modal
-function deleteRecurringFromEdit() {
-    if (typeof window._editingRecurringIndex !== 'undefined' && window._editingRecurringIndex !== -1) {
-        deleteRecurringTransaction(window._editingRecurringIndex);
-        closeRecurringModal();
-        window._editingRecurringIndex = -1;
-    }
-}
-
-// Fix: Save recurring transaction
-function saveRecurringTransaction() {
-    const name = document.getElementById('recurringName')?.value.trim();
-    const amount = parseFloat(document.getElementById('recurringAmount')?.value);
-    const type = document.getElementById('recurringType')?.value;
-    const category = document.getElementById('recurringCategory')?.value;
-    const frequency = document.getElementById('recurringFrequency')?.value;
-    const dayOfMonth = parseInt(document.getElementById('recurringDayOfMonth')?.value || 1);
-    const isActive = document.getElementById('recurringActive')?.checked;
-    
-    if (!name) {
-        if (window.sileo) window.sileo.error('Please enter a name', 'Error');
-        return;
-    }
-    
-    if (isNaN(amount) || amount <= 0) {
-        if (window.sileo) window.sileo.error('Please enter a valid amount', 'Error');
-        return;
-    }
-    
-    const recurringData = {
-        id: `recurring_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        name,
-        amount,
-        category,
-        type,
-        frequency,
-        dayOfMonth: Math.min(31, Math.max(1, dayOfMonth)),
-        isActive,
-        createdAt: new Date().toISOString(),
-        lastGenerated: null
-    };
-    
-    if (typeof window._editingRecurringIndex !== 'undefined' && window._editingRecurringIndex !== -1) {
-        // Update existing
-        recurringData.id = window.recurringTransactions[window._editingRecurringIndex].id;
-        recurringData.createdAt = window.recurringTransactions[window._editingRecurringIndex].createdAt;
-        recurringData.lastGenerated = window.recurringTransactions[window._editingRecurringIndex].lastGenerated;
-        window.recurringTransactions[window._editingRecurringIndex] = recurringData;
-        if (window.sileo) window.sileo.success('Recurring transaction updated!', 'Success');
-        window._editingRecurringIndex = -1;
-    } else {
-        window.recurringTransactions.push(recurringData);
-        if (window.sileo) window.sileo.success('Recurring transaction created!', 'Success');
-    }
-    
-    if (typeof saveToFirebase === 'function') saveToFirebase();
-    closeRecurringModal();
-    renderRecurringTransactions();
-}
-
-// Fix: Process recurring transactions (auto-generate)
-// ============================================================
-// PROCESS RECURRING TRANSACTIONS - WITH PAYMENT TRACKING
-// ============================================================
-
-function processRecurringTransactions() {
-    if (!window.recurringTransactions || window.recurringTransactions.length === 0) return;
-    
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-    const currentDay = today.getDate();
-    const currentMonth = today.getMonth();
-    const currentYear = today.getFullYear();
-    
-    let newTransactions = [];
-    let updated = false;
-    
-    window.recurringTransactions.forEach((recurring, idx) => {
-        if (!recurring.isActive) return;
-        
-        const lastGen = recurring.lastGenerated ? new Date(recurring.lastGenerated) : null;
-        let shouldGenerate = false;
-        let dueDate = null;
-        
-        switch (recurring.frequency) {
-            case 'daily':
-                if (!lastGen || lastGen.toDateString() !== today.toDateString()) {
-                    shouldGenerate = true;
-                    dueDate = todayStr;
-                }
-                break;
-            case 'weekly':
-                if (!lastGen || !isSameWeek(lastGen, today)) {
-                    shouldGenerate = true;
-                    dueDate = todayStr;
-                }
-                break;
-            case 'monthly':
-                const targetDay = recurring.dayOfMonth || 1;
-                if (currentDay === targetDay) {
-                    if (!lastGen || lastGen.getMonth() !== currentMonth || lastGen.getFullYear() !== currentYear) {
-                        shouldGenerate = true;
-                        dueDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
-                    }
-                }
-                break;
-            case 'yearly':
-                const targetDayYear = recurring.dayOfMonth || 1;
-                const targetMonth = recurring.createdAt ? new Date(recurring.createdAt).getMonth() : 0;
-                if (currentDay === targetDayYear && currentMonth === targetMonth) {
-                    if (!lastGen || lastGen.getFullYear() !== currentYear) {
-                        shouldGenerate = true;
-                        dueDate = `${currentYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(targetDayYear).padStart(2, '0')}`;
-                    }
-                }
-                break;
-        }
-        
-        if (shouldGenerate) {
-            const transactionId = `${recurring.id}_${Date.now()}`;
-            newTransactions.push({
-                id: transactionId,
-                type: recurring.type,
-                category: recurring.category,
-                amount: recurring.amount,
-                date: todayStr,
-                note: `[Auto] ${recurring.name}`,
-                createdAt: new Date().toISOString(),
-                recurringId: recurring.id
-            });
-            
-            // Track payment timing
-            trackPaymentTiming(recurring.id, transactionId, todayStr, dueDate);
-            
-            window.recurringTransactions[idx].lastGenerated = new Date().toISOString();
-            updated = true;
-        }
-    });
-    
-    if (newTransactions.length > 0) {
-        if (!window.transactions) window.transactions = [];
-        window.transactions = [...newTransactions, ...window.transactions];
-        if (typeof saveToFirebase === 'function') saveToFirebase();
-        if (typeof render === 'function') render();
-        console.log(`Auto-generated ${newTransactions.length} recurring transactions with payment tracking`);
-    }
-    
-    if (updated && typeof saveToFirebase === 'function') saveToFirebase();
-}
-
-// Helper: Check same week
-function isSameWeek(date1, date2) {
-    const getWeekNumber = (date) => {
-        const d = new Date(date);
-        d.setHours(0, 0, 0, 0);
-        d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
-        const week1 = new Date(d.getFullYear(), 0, 4);
-        return 1 + Math.round(((d - week1) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
-    };
-    return getWeekNumber(date1) === getWeekNumber(date2) && date1.getFullYear() === date2.getFullYear();
-}
-
-// Helper: Check same week
-function isSameWeek(date1, date2) {
-    const getWeekNumber = (date) => {
-        const d = new Date(date);
-        d.setHours(0, 0, 0, 0);
-        d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
-        const week1 = new Date(d.getFullYear(), 0, 4);
-        return 1 + Math.round(((d - week1) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
-    };
-    return getWeekNumber(date1) === getWeekNumber(date2) && date1.getFullYear() === date2.getFullYear();
-}
-
-// Fix: Update recurring categories
-function updateRecurringCategories() {
-    const type = document.getElementById('recurringType')?.value;
-    const categorySelect = document.getElementById('recurringCategory');
-    if (!type || !categorySelect) return;
-    
-    let categories = [];
-    if (type === 'expense') categories = expenseCats;
-    else if (type === 'income') categories = incomeCats;
-    else categories = savingsCats;
-    
-    categorySelect.innerHTML = categories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
-}
-
-// Fix: Close recurring modal
-function closeRecurringModal() {
-    const modal = document.getElementById('recurringModal');
-    if (modal) {
-        modal.classList.remove('active');
-        modal.style.display = 'none';
-        document.body.classList.remove('modal-open');
-    }
-    window._editingRecurringIndex = -1;
-}
-
-// Start auto-checker for recurring transactions
-if (typeof startRecurringChecker === 'undefined') {
-    setInterval(() => {
-        if (window.recurringTransactions && window.recurringTransactions.length > 0) {
-            processRecurringTransactions();
-        }
-    }, 60 * 60 * 1000); // Check every hour
-    
-    // Initial check after 10 seconds
-    setTimeout(() => {
-        if (window.recurringTransactions && window.recurringTransactions.length > 0) {
-            processRecurringTransactions();
-        }
-    }, 10000);
-}
-
-// Override the add recurring button if needed
-document.addEventListener('DOMContentLoaded', function() {
-    // Fix the Add Recurring button
-    const addBtn = document.querySelector('.btn-add-recurring');
-    if (addBtn && !addBtn.hasAttribute('data-fixed')) {
-        addBtn.setAttribute('data-fixed', 'true');
-        addBtn.onclick = function() {
-            window._editingRecurringIndex = -1;
-            const modal = document.getElementById('recurringModal');
-            if (modal) {
-                document.getElementById('recurringName').value = '';
-                document.getElementById('recurringAmount').value = '';
-                document.getElementById('recurringType').value = 'expense';
-                document.getElementById('recurringFrequency').value = 'monthly';
-                document.getElementById('recurringDayOfMonth').value = '1';
-                document.getElementById('recurringActive').checked = true;
-                updateRecurringCategories();
-                document.getElementById('recurringModalTitle').innerHTML = '<i class="fas fa-plus"></i> Add Recurring Transaction';
-                const deleteBtn = document.getElementById('recurringDeleteBtn');
-                if (deleteBtn) deleteBtn.style.display = 'none';
-                modal.classList.add('active');
-                modal.style.display = 'flex';
-                document.body.classList.add('modal-open');
-            } else {
-                alert('Please refresh the page to load the recurring modal');
-            }
-        };
-    }
-    
-    // Initial render of recurring transactions
-    setTimeout(renderRecurringTransactions, 1000);
-});
-
-console.log('✅ Recurring transactions fix loaded');
-
-// ===== PREMIUM RECURRING TRANSACTIONS UI/UX =====
-
-// Helper functions (keep your existing ones)
-function getNextOccurrence(recurring) {
-    const today = new Date();
-    const currentYear = today.getFullYear();
-    const currentMonth = today.getMonth();
-    const currentDay = today.getDate();
-    
-    let nextDate = new Date();
-    
-    switch (recurring.frequency) {
-        case 'daily':
-            const lastGen = recurring.lastGenerated ? new Date(recurring.lastGenerated) : null;
-            if (lastGen && lastGen.toDateString() === today.toDateString()) {
-                nextDate.setDate(today.getDate() + 1);
-            } else {
-                nextDate = today;
-            }
-            break;
-        case 'weekly':
-            const dayOfWeek = recurring.dayOfWeek !== undefined ? recurring.dayOfWeek : 1;
-            const currentWeekDay = today.getDay();
-            let daysToAdd = (dayOfWeek - currentWeekDay + 7) % 7;
-            if (daysToAdd === 0 && recurring.lastGenerated) {
-                const lastGenDate = new Date(recurring.lastGenerated);
-                if (lastGenDate.toDateString() === today.toDateString()) {
-                    daysToAdd = 7;
-                }
-            }
-            nextDate.setDate(today.getDate() + daysToAdd);
-            break;
-        case 'monthly':
-            const targetDay = recurring.dayOfMonth || 1;
-            nextDate = new Date(currentYear, currentMonth, targetDay);
-            if (nextDate < today) {
-                nextDate = new Date(currentYear, currentMonth + 1, targetDay);
-            }
-            if (nextDate.getDate() !== targetDay) {
-                nextDate = new Date(currentYear, currentMonth + 1, 0);
-            }
-            break;
-        case 'yearly':
-            const targetMonth = recurring.targetMonth !== undefined ? recurring.targetMonth : (recurring.createdAt ? new Date(recurring.createdAt).getMonth() : 0);
-            const targetDayYear = recurring.dayOfMonth || 1;
-            nextDate = new Date(currentYear, targetMonth, targetDayYear);
-            if (nextDate < today) {
-                nextDate = new Date(currentYear + 1, targetMonth, targetDayYear);
-            }
-            if (nextDate.getDate() !== targetDayYear) {
-                nextDate = new Date(currentYear + 1, targetMonth + 1, 0);
-            }
-            break;
-    }
-    return nextDate;
-}
-
-function getDaysUntilNext(recurring) {
-    const nextDate = getNextOccurrence(recurring);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    nextDate.setHours(0, 0, 0, 0);
-    return Math.ceil((nextDate - today) / (1000 * 60 * 60 * 24));
-}
 
 function getPremiumRecurringStatus(recurring) {
     const daysUntil = getDaysUntilNext(recurring);
@@ -8195,6 +7263,7 @@ function formatNextDatePremium(recurring) {
     return nextDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+
 // Update stats bar
 function updateRecurringStatsBar() {
     const statsBar = document.getElementById('recurringStatsBar');
@@ -8244,157 +7313,7 @@ function updateRecurringStatsBar() {
 }
 
 // Premium render function
-function renderPremiumRecurringTransactions() {
-    const container = document.getElementById('recurringContainer');
-    const emptyState = document.getElementById('recurringEmpty');
-    
-    if (!window.recurringTransactions) window.recurringTransactions = [];
-    
-    if (!container) {
-        setTimeout(renderPremiumRecurringTransactions, 500);
-        return;
-    }
-    
-    if (window.recurringTransactions.length === 0) {
-        if (container) container.style.display = 'none';
-        if (emptyState) {
-            emptyState.style.display = 'block';
-            emptyState.innerHTML = `
-                <div class="recurring-empty-premium">
-                    <i class="fas fa-sync-alt"></i>
-                    <h3>No Recurring Transactions</h3>
-                    <p>Set up automatic transactions for bills, subscriptions, and regular income.</p>
-                    <button class="btn-add-recurring-premium" onclick="createRecurringTransaction()" style="margin-top: 24px;">
-                        <i class="fas fa-plus"></i> Create First Recurring
-                    </button>
-                </div>
-            `;
-        }
-        updateRecurringStatsBar();
-        return;
-    }
-    
-    if (container) container.style.display = 'grid';
-    if (emptyState) emptyState.style.display = 'none';
-    
-    const sortedTransactions = [...window.recurringTransactions].sort((a, b) => {
-        const priority = { 'overdue': 0, 'today': 1, 'soon': 2, 'week': 3, 'two-weeks': 4, 'future': 5, 'paused': 6 };
-        const priorityA = priority[getPremiumRecurringStatus(a).type] || 4;
-        const priorityB = priority[getPremiumRecurringStatus(b).type] || 4;
-        if (priorityA !== priorityB) return priorityA - priorityB;
-        return getDaysUntilNext(a) - getDaysUntilNext(b);
-    });
-    
-    const getTypeIcon = (type) => {
-        const icons = { expense: 'fa-shopping-cart', income: 'fa-arrow-up', savings: 'fa-piggy-bank' };
-        return icons[type] || 'fa-tag';
-    };
-    
-    const getTypeColor = (type) => {
-        const colors = { expense: '#ef4444', income: '#10b981', savings: '#3b82f6' };
-        return colors[type] || '#6b7280';
-    };
-    
-    const getFrequencyClass = (frequency) => {
-        const classes = { daily: 'frequency-daily-premium', weekly: 'frequency-weekly-premium', monthly: 'frequency-monthly-premium', yearly: 'frequency-yearly-premium' };
-        return classes[frequency] || 'frequency-monthly-premium';
-    };
-    
-    const html = sortedTransactions.map((recurring) => {
-        const actualIndex = window.recurringTransactions.findIndex(r => r.id === recurring.id);
-        const typeColor = getTypeColor(recurring.type);
-        const status = getPremiumRecurringStatus(recurring);
-        const daysUntil = getDaysUntilNext(recurring);
-        const nextDateFormatted = formatNextDatePremium(recurring);
-        const progressPercent = Math.min(100, Math.max(0, ((30 - daysUntil) / 30) * 100));
-        
-        let progressColor = '#10b981';
-        if (daysUntil <= 3) progressColor = '#ef4444';
-        else if (daysUntil <= 7) progressColor = '#f59e0b';
-        else if (daysUntil <= 14) progressColor = '#8b5cf6';
-        
-        // Donut chart calculation
-        const circumference = 2 * Math.PI * 45;
-        const strokeDasharray = circumference;
-        const strokeDashoffset = circumference - (Math.min(100, Math.max(0, (daysUntil / 30) * 100)) / 100) * circumference;
-        
-        return `
-            <div class="recurring-card" data-status="${status.type}">
-                <div class="recurring-card-header">
-                    <div class="recurring-name">
-                        <i class="${getTypeIcon(recurring.type)}" style="color: ${typeColor}; background: ${typeColor}10;"></i>
-                        <h4>${escapeHtml(recurring.name)}</h4>
-                    </div>
-                    <div class="status-badge-modern status-${status.type}">
-                        <i class="fas ${status.icon}"></i> ${status.text}
-                    </div>
-                </div>
-                
-                <div class="recurring-card-body">
-                    <div class="detail-row">
-                        <i class="fas fa-tag"></i>
-                        <span>Category</span>
-                        <span class="category-tag">${escapeHtml(recurring.category)}</span>
-                    </div>
-                    <div class="detail-row">
-                        <i class="fas fa-calendar-alt"></i>
-                        <span>Frequency</span>
-                        <span class="frequency-badge-premium ${getFrequencyClass(recurring.frequency)}">
-                            <i class="fas ${recurring.frequency === 'daily' ? 'fa-sun' : recurring.frequency === 'weekly' ? 'fa-calendar-week' : recurring.frequency === 'monthly' ? 'fa-calendar-alt' : 'fa-calendar'}"></i>
-                            ${recurring.frequency.charAt(0).toUpperCase() + recurring.frequency.slice(1)}
-                        </span>
-                    </div>
-                    
-                    ${recurring.isActive && daysUntil >= 0 ? `
-                    <div class="countdown-container">
-                        <div class="countdown-ring">
-                            <svg width="60" height="60" viewBox="0 0 120 120" class="countdonut-svg">
-                                <circle cx="60" cy="60" r="45" fill="none" stroke="var(--gray-300)" stroke-width="8" class="countdonut-bg"/>
-                                <circle cx="60" cy="60" r="45" fill="none" stroke="${progressColor}" stroke-width="8" 
-                                    stroke-dasharray="${strokeDasharray}" stroke-dashoffset="${strokeDashoffset}" 
-                                    class="countdonut-fill" transform="rotate(-90 60 60)"/>
-                            </svg>
-                            <div class="countdown-number" style="color: ${progressColor};">${daysUntil}</div>
-                        </div>
-                        <div class="countdown-info">
-                            <div class="countdown-label">NEXT OCCURRENCE</div>
-                            <div class="countdown-value">${nextDateFormatted}</div>
-                            <div class="countdown-date">in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}</div>
-                        </div>
-                    </div>
-                    
-                    <div class="progress-modern">
-                        <div class="progress-modern-header">
-                            <span>Time remaining</span>
-                            <span>${Math.round(progressPercent)}%</span>
-                        </div>
-                        <div class="progress-modern-bar">
-                            <div class="progress-modern-fill" style="width: ${progressPercent}%; background: ${progressColor};"></div>
-                        </div>
-                    </div>
-                    ` : ''}
-                    
-                    <div class="recurring-amount-premium">
-                        <span class="amount-label-premium">Amount</span>
-                        <span class="amount-value-premium">${formatCurrency(recurring.amount)}</span>
-                    </div>
-                </div>
-                
-                <div class="recurring-card-footer">
-                    <button class="card-btn-premium card-btn-edit" onclick="editRecurringTransaction(${actualIndex})">
-                        <i class="fas fa-edit"></i> Edit
-                    </button>
-                    <button class="card-btn-premium card-btn-delete" onclick="deleteRecurringTransaction(${actualIndex})">
-                        <i class="fas fa-trash"></i> Delete
-                    </button>
-                </div>
-            </div>
-        `;
-    }).join('');
-    
-    container.innerHTML = html;
-    updateRecurringStatsBar();
-}
+
 
 // Add stats bar to the DOM
 function addRecurringStatsBar() {
@@ -8959,52 +7878,63 @@ function updatePaymentStats(recurringIndex) {
     };
 }
 
-// Mark a recurring payment as paid (manual override)
-async function markRecurringAsPaid(recurringId, dueDate) {
-    const recurringIndex = window.recurringTransactions.findIndex(r => r.id === recurringId);
-    if (recurringIndex === -1) return;
+// ============================================================
+// FIXED: CALCULATE NEXT DUE DATE
+// ============================================================
+
+function calculateNextDueDate(recurring) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     
-    const today = new Date().toISOString().split('T')[0];
+    // Use lastGenerated as base, or fallback to today
+    const baseDate = recurring.lastGenerated ? new Date(recurring.lastGenerated) : new Date(today);
+    baseDate.setHours(0, 0, 0, 0);
     
-    // Check if already paid for this period
-    const alreadyPaid = window.recurringTransactions[recurringIndex].paymentHistory?.some(
-        p => p.dueDate === dueDate
-    );
+    let nextDate = new Date(baseDate);
+    const targetDay = recurring.dayOfMonth || 1;
     
-    if (alreadyPaid) {
-        if (window.sileo) window.sileo.warning('Already marked as paid for this period', 'Info');
-        return;
+    switch (recurring.frequency) {
+        case 'daily':
+            nextDate.setDate(baseDate.getDate() + 1);
+            break;
+            
+        case 'weekly':
+            nextDate.setDate(baseDate.getDate() + 7);
+            break;
+            
+        case 'monthly':
+            // Add one month from the base date
+            nextDate.setMonth(baseDate.getMonth() + 1);
+            // Set the target day
+            nextDate.setDate(targetDay);
+            
+            // If the date rolled over (e.g., Feb 31), go to end of month
+            if (nextDate.getDate() !== targetDay) {
+                nextDate = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0);
+            }
+            break;
+            
+        case 'yearly':
+            nextDate.setFullYear(baseDate.getFullYear() + 1);
+            nextDate.setDate(targetDay);
+            break;
+            
+        default:
+            nextDate.setDate(baseDate.getDate() + 1);
     }
     
-    // Create transaction
-    const transaction = {
-        id: `${recurringId}_${Date.now()}`,
-        type: window.recurringTransactions[recurringIndex].type,
-        category: window.recurringTransactions[recurringIndex].category,
-        amount: window.recurringTransactions[recurringIndex].amount,
-        date: today,
-        note: `[Manual Payment] ${window.recurringTransactions[recurringIndex].name}`,
-        createdAt: new Date().toISOString(),
-        recurringId: recurringId,
-        isManualPayment: true
-    };
-    
-    window.transactions.unshift(transaction);
-    
-    // Track timing
-    trackPaymentTiming(recurringId, transaction.id, today, dueDate);
-    
-    // Update last generated date to prevent auto-generation for this period
-    window.recurringTransactions[recurringIndex].lastGenerated = new Date().toISOString();
-    
-    await saveToFirebase();
-    render();
-    renderPremiumRecurringTransactions();
-    
-    const timing = getPaymentTimingDisplay(today, dueDate);
-    if (window.sileo) {
-        window.sileo.success(`Payment recorded! ${timing.text}`, 'Success');
+    // Ensure nextDate is not before today
+    while (nextDate < today) {
+        switch (recurring.frequency) {
+            case 'daily': nextDate.setDate(nextDate.getDate() + 1); break;
+            case 'weekly': nextDate.setDate(nextDate.getDate() + 7); break;
+            case 'monthly': nextDate.setMonth(nextDate.getMonth() + 1); break;
+            case 'yearly': nextDate.setFullYear(nextDate.getFullYear() + 1); break;
+            default: nextDate.setDate(nextDate.getDate() + 1);
+        }
     }
+    
+    return nextDate.toISOString().split('T')[0];
 }
 
 // Helper to get payment timing display
@@ -9107,7 +8037,7 @@ function getNextDueDateStr(recurring) {
     return nextDate.toISOString().split('T')[0];
 }
 
-// Replace your renderPremiumRecurringTransactions function with this cleaner version
+// ===== FIXED: RENDER PREMIUM RECURRING TRANSACTIONS =====
 function renderPremiumRecurringTransactions() {
     const container = document.getElementById('recurringContainer');
     const emptyState = document.getElementById('recurringEmpty');
@@ -9149,45 +8079,119 @@ function renderPremiumRecurringTransactions() {
         return getDaysUntilNext(a) - getDaysUntilNext(b);
     });
     
-    const getTypeIcon = (type) => {
+    const getTypeIcon = function(type) {
         const icons = { expense: 'fa-shopping-cart', income: 'fa-arrow-up', savings: 'fa-piggy-bank' };
         return icons[type] || 'fa-tag';
     };
     
-    const getTypeColor = (type) => {
+    const getTypeColor = function(type) {
         const colors = { expense: '#ef4444', income: '#10b981', savings: '#3b82f6' };
         return colors[type] || '#6b7280';
     };
     
+    const getFrequencyClass = function(frequency) {
+        const classes = { 
+            daily: 'frequency-daily-premium', 
+            weekly: 'frequency-weekly-premium', 
+            monthly: 'frequency-monthly-premium', 
+            yearly: 'frequency-yearly-premium' 
+        };
+        return classes[frequency] || 'frequency-monthly-premium';
+    };
+    
     const circumference = 2 * Math.PI * 45;
     
-    const html = sortedTransactions.map((recurring) => {
-        const actualIndex = window.recurringTransactions.findIndex(r => r.id === recurring.id);
-        const typeColor = getTypeColor(recurring.type);
-        const status = getPremiumRecurringStatus(recurring);
-        const daysUntil = getDaysUntilNext(recurring);
-        const nextDateFormatted = formatNextDatePremium(recurring);
+    var html = sortedTransactions.map(function(recurring) {
+        var actualIndex = window.recurringTransactions.findIndex(function(r) { return r.id === recurring.id; });
+        var typeColor = getTypeColor(recurring.type);
+        var status = getPremiumRecurringStatus(recurring);
+        var daysUntil = getDaysUntilNext(recurring);
+        var nextDateFormatted = formatNextDatePremium(recurring);
         
-        let progressColor = '#10b981';
+        var progressColor = '#10b981';
         if (daysUntil <= 3) progressColor = '#ef4444';
         else if (daysUntil <= 7) progressColor = '#f59e0b';
         else if (daysUntil <= 14) progressColor = '#8b5cf6';
         
-        const strokeDashoffset = circumference - (Math.min(100, Math.max(0, (daysUntil / 30) * 100)) / 100) * circumference;
+        var strokeDashoffset = circumference - (Math.min(100, Math.max(0, (daysUntil / 30) * 100)) / 100) * circumference;
         
-        // Payment stats display
-        const stats = recurring.paymentStats;
-        const showPaymentStats = stats && stats.totalPayments > 0;
-        const lastPaymentTiming = stats?.lastPaymentTiming;
+        var stats = recurring.paymentStats;
+        var showPaymentStats = stats && stats.totalPayments > 0;
+        var lastPaymentTiming = stats ? stats.lastPaymentTiming : null;
         
-        // Get timing badge for last payment
-        let timingBadge = '';
+        // Check if paid for this period
+        var isPaidForThisPeriod = false;
+        if (recurring.paymentHistory && recurring.paymentHistory.length > 0) {
+            var today = new Date();
+            var currentMonth = today.getMonth();
+            var currentYear = today.getFullYear();
+            for (var i = 0; i < recurring.paymentHistory.length; i++) {
+                var p = recurring.paymentHistory[i];
+                var dueDate = new Date(p.dueDate);
+                var dueMonth = dueDate.getMonth();
+                var dueYear = dueDate.getFullYear();
+                if (dueMonth === currentMonth && dueYear === currentYear) {
+                    isPaidForThisPeriod = true;
+                    break;
+                }
+            }
+        }
+        
+        var timingBadge = '';
         if (lastPaymentTiming === 'early') {
             timingBadge = '<span class="payment-timing-badge payment-timing-early"><i class="fas fa-calendar-check"></i> Early</span>';
         } else if (lastPaymentTiming === 'late') {
             timingBadge = '<span class="payment-timing-badge payment-timing-late"><i class="fas fa-calendar-exclamation"></i> Late</span>';
         } else if (lastPaymentTiming === 'on-time') {
             timingBadge = '<span class="payment-timing-badge payment-timing-on-time"><i class="fas fa-check"></i> On time</span>';
+        }
+        
+        var paidBadge = '';
+        if (isPaidForThisPeriod) {
+            paidBadge = '<div class="paid-badge"><i class="fas fa-check-circle"></i> PAID</div>';
+        }
+        
+        var countdownHtml = '';
+        if (recurring.isActive && daysUntil >= 0) {
+            countdownHtml = `
+                <div class="countdown-container">
+                    <div class="countdown-ring">
+                        <svg width="60" height="60" viewBox="0 0 120 120" class="countdonut-svg">
+                            <circle cx="60" cy="60" r="45" fill="none" stroke="var(--gray-300)" stroke-width="8" class="countdonut-bg"/>
+                            <circle cx="60" cy="60" r="45" fill="none" stroke="${progressColor}" stroke-width="8" 
+                                stroke-dasharray="${circumference}" stroke-dashoffset="${strokeDashoffset}" 
+                                class="countdonut-fill" transform="rotate(-90 60 60)"/>
+                        </svg>
+                        <div class="countdown-number" style="color: ${progressColor};">${daysUntil}</div>
+                    </div>
+                    <div class="countdown-info">
+                        <div class="countdown-label">NEXT</div>
+                        <div class="countdown-value">${nextDateFormatted}</div>
+                        <div class="countdown-date">${daysUntil === 0 ? 'Due today!' : 'in ' + daysUntil + ' day' + (daysUntil !== 1 ? 's' : '')}</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        var paymentStatsHtml = '';
+        if (showPaymentStats) {
+            paymentStatsHtml = `
+                <div class="payment-stats">
+                    <div class="payment-stat early"><i class="fas fa-check-circle"></i> ${stats.earlyPercentage.toFixed(0)}%</div>
+                    <div class="payment-stat on-time"><i class="fas fa-minus-circle"></i> ${stats.onTimePercentage.toFixed(0)}%</div>
+                    <div class="payment-stat late"><i class="fas fa-exclamation-circle"></i> ${stats.latePercentage.toFixed(0)}%</div>
+                </div>
+            `;
+        }
+        
+        var dayRow = '';
+        if (recurring.frequency === 'monthly' || recurring.frequency === 'yearly') {
+            dayRow = `
+                <div class="detail-row">
+                    <span>Day</span>
+                    <span>Day ${recurring.dayOfMonth || 1} of month</span>
+                </div>
+            `;
         }
         
         return `
@@ -9197,8 +8201,11 @@ function renderPremiumRecurringTransactions() {
                         <i class="${getTypeIcon(recurring.type)}" style="color: ${typeColor}; background: ${typeColor}10;"></i>
                         <h4>${escapeHtml(recurring.name)}</h4>
                     </div>
-                    <div class="status-badge-modern status-${status.type}">
-                        <i class="fas ${status.icon}"></i> ${status.text}
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div class="status-badge-modern status-${status.type}">
+                            <i class="fas ${status.icon}"></i> ${status.text}
+                        </div>
+                        ${paidBadge}
                     </div>
                 </div>
                 
@@ -9213,36 +8220,10 @@ function renderPremiumRecurringTransactions() {
                             ${recurring.frequency.charAt(0).toUpperCase() + recurring.frequency.slice(1)}
                         </span>
                     </div>
-                    
-                    ${timingBadge ? `<div class="detail-row"><span>Last</span>${timingBadge}</div>` : ''}
-                    
-                    ${recurring.isActive && daysUntil >= 0 ? `
-                    <div class="countdown-container">
-                        <div class="countdown-ring">
-                            <svg width="60" height="60" viewBox="0 0 120 120" class="countdonut-svg">
-                                <circle cx="60" cy="60" r="45" fill="none" stroke="var(--gray-300)" stroke-width="8" class="countdonut-bg"/>
-                                <circle cx="60" cy="60" r="45" fill="none" stroke="${progressColor}" stroke-width="8" 
-                                    stroke-dasharray="${circumference}" stroke-dashoffset="${strokeDashoffset}" 
-                                    class="countdonut-fill" transform="rotate(-90 60 60)"/>
-                            </svg>
-                            <div class="countdown-number" style="color: ${progressColor};">${daysUntil}</div>
-                        </div>
-                        <div class="countdown-info">
-                            <div class="countdown-label">NEXT</div>
-                            <div class="countdown-value">${nextDateFormatted}</div>
-                            <div class="countdown-date">in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}</div>
-                        </div>
-                    </div>
-                    ` : ''}
-                    
-                    ${showPaymentStats ? `
-                    <div class="payment-stats">
-                        <div class="payment-stat early"><i class="fas fa-check-circle"></i> ${stats.earlyPercentage.toFixed(0)}%</div>
-                        <div class="payment-stat on-time"><i class="fas fa-minus-circle"></i> ${stats.onTimePercentage.toFixed(0)}%</div>
-                        <div class="payment-stat late"><i class="fas fa-exclamation-circle"></i> ${stats.latePercentage.toFixed(0)}%</div>
-                    </div>
-                    ` : ''}
-                    
+                    ${dayRow}
+                    ${timingBadge ? '<div class="detail-row"><span>Last</span>' + timingBadge + '</div>' : ''}
+                    ${countdownHtml}
+                    ${paymentStatsHtml}
                     <div class="recurring-amount-premium">
                         <span class="amount-label-premium">AMOUNT</span>
                         <span class="amount-value-premium">${formatCurrency(recurring.amount)}</span>
@@ -9267,7 +8248,6 @@ function renderPremiumRecurringTransactions() {
     container.innerHTML = html;
     updateRecurringStatsBar();
 }
-
 // ============================================================
 // RECURRING TRANSACTIONS - COMPLETE HELPER FUNCTIONS
 // ============================================================
@@ -9283,75 +8263,62 @@ function getFrequencyClass(frequency) {
     return classes[frequency] || 'frequency-monthly-premium';
 }
 
-// Get next occurrence date for recurring transaction
 function getNextOccurrence(recurring) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const currentYear = today.getFullYear();
-    const currentMonth = today.getMonth();
-    const currentDay = today.getDate();
     
-    let nextDate = new Date(today);
+    // If there's a nextDueDate and it's in the future, return it directly (already calculated)
+    if (recurring.nextDueDate) {
+        const nextDate = new Date(recurring.nextDueDate);
+        nextDate.setHours(0, 0, 0, 0);
+        if (nextDate >= today) {
+            return nextDate;
+        }
+    }
+    
+    // Otherwise calculate from lastGenerated
+    const baseDate = recurring.lastGenerated ? new Date(recurring.lastGenerated) : new Date(today);
+    baseDate.setHours(0, 0, 0, 0);
+    
+    let nextDate = new Date(baseDate);
+    const targetDay = parseInt(recurring.dayOfMonth) || 1;
     
     switch (recurring.frequency) {
         case 'daily':
-            const lastGen = recurring.lastGenerated ? new Date(recurring.lastGenerated) : null;
-            if (lastGen && lastGen.toDateString() === today.toDateString()) {
-                nextDate.setDate(today.getDate() + 1);
-            } else {
-                nextDate = new Date(today);
-            }
+            nextDate.setDate(baseDate.getDate() + 1);
             break;
         case 'weekly':
-            const dayOfWeek = recurring.dayOfWeek !== undefined ? recurring.dayOfWeek : 1;
-            const currentWeekDay = today.getDay();
-            let daysToAdd = (dayOfWeek - currentWeekDay + 7) % 7;
-            if (daysToAdd === 0 && recurring.lastGenerated) {
-                const lastGenDate = new Date(recurring.lastGenerated);
-                if (lastGenDate.toDateString() === today.toDateString()) {
-                    daysToAdd = 7;
-                }
-            }
-            nextDate.setDate(today.getDate() + daysToAdd);
+            nextDate.setDate(baseDate.getDate() + 7);
             break;
         case 'monthly':
-            const targetDay = recurring.dayOfMonth || 1;
-            nextDate = new Date(currentYear, currentMonth, targetDay);
-            if (nextDate < today) {
-                nextDate = new Date(currentYear, currentMonth + 1, targetDay);
-            }
+            // Add one month
+            nextDate.setMonth(baseDate.getMonth() + 1);
+            nextDate.setDate(targetDay);
+            // Handle invalid dates (Feb 31, etc.)
             if (nextDate.getDate() !== targetDay) {
-                nextDate = new Date(currentYear, currentMonth + 1, 0);
+                nextDate = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0);
             }
             break;
         case 'yearly':
-            const targetDayYear = recurring.dayOfMonth || 1;
-            const targetMonth = recurring.targetMonth !== undefined ? recurring.targetMonth : (recurring.createdAt ? new Date(recurring.createdAt).getMonth() : 0);
-            nextDate = new Date(currentYear, targetMonth, targetDayYear);
-            if (nextDate < today) {
-                nextDate = new Date(currentYear + 1, targetMonth, targetDayYear);
-            }
-            if (nextDate.getDate() !== targetDayYear) {
-                nextDate = new Date(currentYear + 1, targetMonth + 1, 0);
-            }
+            nextDate.setFullYear(baseDate.getFullYear() + 1);
+            nextDate.setDate(targetDay);
             break;
         default:
-            nextDate = new Date(currentYear, currentMonth + 1, 1);
+            nextDate.setDate(baseDate.getDate() + 1);
+    }
+    
+    // Ensure nextDate is not before today
+    while (nextDate < today) {
+        switch (recurring.frequency) {
+            case 'daily': nextDate.setDate(nextDate.getDate() + 1); break;
+            case 'weekly': nextDate.setDate(nextDate.getDate() + 7); break;
+            case 'monthly': nextDate.setMonth(nextDate.getMonth() + 1); break;
+            case 'yearly': nextDate.setFullYear(nextDate.getFullYear() + 1); break;
+            default: nextDate.setDate(nextDate.getDate() + 1);
+        }
     }
     
     return nextDate;
-}
-
-// Get days until next occurrence
-function getDaysUntilNext(recurring) {
-    const nextDate = getNextOccurrence(recurring);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    nextDate.setHours(0, 0, 0, 0);
-    
-    const diffTime = nextDate - today;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return Math.max(0, diffDays);
 }
 
 // Get premium status for recurring transaction
@@ -9600,12 +8567,16 @@ function getNextDueDateStr(recurring) {
     return nextDate.toISOString().split('T')[0];
 }
 
-// Mark a recurring payment as paid (manual override)
+
 async function markRecurringAsPaid(recurringId, dueDate) {
     const recurringIndex = window.recurringTransactions.findIndex(r => r.id === recurringId);
-    if (recurringIndex === -1) return;
+    if (recurringIndex === -1) {
+        if (window.sileo) window.sileo.error('Transaction not found', 'Error');
+        return;
+    }
     
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
     
     // Check if already paid for this period
     const alreadyPaid = window.recurringTransactions[recurringIndex].paymentHistory?.some(
@@ -9617,14 +8588,63 @@ async function markRecurringAsPaid(recurringId, dueDate) {
         return;
     }
     
-    // Create transaction
+    const currentRecurring = window.recurringTransactions[recurringIndex];
+    const targetDay = parseInt(currentRecurring.dayOfMonth) || 1;
+    const frequency = currentRecurring.frequency || 'monthly';
+    
+    // ✅ Calculate next due date based on FREQUENCY (FIX FOR >30 DAYS BUG)
+    let nextDate = new Date(today);
+    
+    switch (frequency) {
+        case 'daily':
+            nextDate.setDate(today.getDate() + 1);
+            break;
+        case 'weekly':
+            nextDate.setDate(today.getDate() + 7);
+            break;
+        case 'monthly':
+            // Add one month and set to target day
+            let nextMonth = today.getMonth() + 1;
+            let nextYear = today.getFullYear();
+            if (nextMonth > 11) {
+                nextMonth = 0;
+                nextYear++;
+            }
+            nextDate = new Date(nextYear, nextMonth, targetDay);
+            // Handle invalid dates (Feb 31, etc.)
+            if (nextDate.getDate() !== targetDay) {
+                nextDate = new Date(nextYear, nextMonth + 1, 0);
+            }
+            break;
+        case 'yearly':
+            nextDate.setFullYear(today.getFullYear() + 1);
+            nextDate.setMonth(today.getMonth());
+            nextDate.setDate(targetDay);
+            break;
+        default:
+            // Default to monthly if frequency not recognized
+            let defaultNextMonth = today.getMonth() + 1;
+            let defaultNextYear = today.getFullYear();
+            if (defaultNextMonth > 11) {
+                defaultNextMonth = 0;
+                defaultNextYear++;
+            }
+            nextDate = new Date(defaultNextYear, defaultNextMonth, targetDay);
+            if (nextDate.getDate() !== targetDay) {
+                nextDate = new Date(defaultNextYear, defaultNextMonth + 1, 0);
+            }
+    }
+    
+    const nextDateStr = nextDate.toISOString().split('T')[0];
+    
+    // ✅ Create transaction
     const transaction = {
         id: `${recurringId}_${Date.now()}`,
-        type: window.recurringTransactions[recurringIndex].type,
-        category: window.recurringTransactions[recurringIndex].category,
-        amount: window.recurringTransactions[recurringIndex].amount,
-        date: today,
-        note: `[Manual Payment] ${window.recurringTransactions[recurringIndex].name}`,
+        type: currentRecurring.type,
+        category: currentRecurring.category,
+        amount: currentRecurring.amount,
+        date: todayStr,
+        note: `[Paid] ${currentRecurring.name}`,
         createdAt: new Date().toISOString(),
         recurringId: recurringId,
         isManualPayment: true
@@ -9632,20 +8652,117 @@ async function markRecurringAsPaid(recurringId, dueDate) {
     
     window.transactions.unshift(transaction);
     
-    // Track timing
-    trackPaymentTiming(recurringId, transaction.id, today, dueDate);
+    // ✅ Update recurring transaction - CRITICAL
+    window.recurringTransactions[recurringIndex].lastGenerated = todayStr;
+    window.recurringTransactions[recurringIndex].nextDueDate = nextDateStr;
     
-    // Update last generated date to prevent auto-generation for this period
-    window.recurringTransactions[recurringIndex].lastGenerated = new Date().toISOString();
-    
-    await saveToFirebase();
-    render();
-    renderPremiumRecurringTransactions();
-    
-    const timing = getPaymentTimingDisplay(today, dueDate);
-    if (window.sileo) {
-        window.sileo.success(`Payment recorded! ${timing.text}`, 'Success');
+    // ✅ Add to payment history
+    if (!window.recurringTransactions[recurringIndex].paymentHistory) {
+        window.recurringTransactions[recurringIndex].paymentHistory = [];
     }
+    
+    window.recurringTransactions[recurringIndex].paymentHistory.push({
+        transactionId: transaction.id,
+        dueDate: dueDate,
+        paidDate: todayStr,
+        timing: 'on-time',
+        daysDiff: 0,
+        amount: currentRecurring.amount
+    });
+    
+    // Keep only last 20 payments
+    if (window.recurringTransactions[recurringIndex].paymentHistory.length > 20) {
+        window.recurringTransactions[recurringIndex].paymentHistory = 
+            window.recurringTransactions[recurringIndex].paymentHistory.slice(-20);
+    }
+    
+    // ✅ Update payment stats
+    updatePaymentStats(recurringIndex);
+    
+    // ✅ Save to Firebase
+    await saveToFirebase();
+    
+    // ✅ FORCE RENDER ALL VIEWS
+    if (typeof render === 'function') render();
+    if (typeof renderRecurringTransactions === 'function') renderRecurringTransactions();
+    if (typeof renderPremiumRecurringTransactions === 'function') renderPremiumRecurringTransactions();
+    
+    // ✅ Show success with next date
+    const daysUntil = getDaysUntilNext(window.recurringTransactions[recurringIndex]);
+    const nextFormatted = formatDate(nextDateStr);
+    
+    if (window.sileo) {
+        window.sileo.success(`✅ Paid! Next payment: ${nextFormatted} (in ${daysUntil} days)`, 'Payment Recorded');
+    }
+}
+
+// ===== CALCULATE NEXT DUE DATE =====
+function getNextDueDate(recurring) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth();
+    const currentDay = today.getDate();
+    const targetDay = recurring.dayOfMonth || 1;
+    
+    let nextDate = new Date(today);
+    
+    switch (recurring.frequency) {
+        case 'daily':
+            nextDate.setDate(today.getDate() + 1);
+            break;
+            
+        case 'weekly':
+            nextDate.setDate(today.getDate() + 7);
+            break;
+            
+        case 'monthly':
+            // If today is the target day, next is next month
+            if (currentDay === targetDay) {
+                nextDate = new Date(currentYear, currentMonth + 1, targetDay);
+            } else if (currentDay < targetDay) {
+                // Target day is later this month
+                nextDate = new Date(currentYear, currentMonth, targetDay);
+            } else {
+                // Target day is next month
+                nextDate = new Date(currentYear, currentMonth + 1, targetDay);
+            }
+            
+            // Handle invalid dates (Feb 31, etc.)
+            if (nextDate.getDate() !== targetDay) {
+                nextDate = new Date(currentYear, currentMonth + 2, 0);
+            }
+            break;
+            
+        case 'yearly': {
+            const targetMonth = recurring.createdAt ? new Date(recurring.createdAt).getMonth() : 0;
+            const targetDayYear = recurring.dayOfMonth || 1;
+            
+            nextDate = new Date(currentYear, targetMonth, targetDayYear);
+            
+            // If nextDate is in the past, add a year
+            if (nextDate < today) {
+                nextDate = new Date(currentYear + 1, targetMonth, targetDayYear);
+            }
+            
+            // Handle invalid dates
+            if (nextDate.getDate() !== targetDayYear) {
+                nextDate = new Date(currentYear + 1, targetMonth + 1, 0);
+            }
+            break;
+        }
+            
+        default:
+            nextDate.setDate(today.getDate() + 1);
+    }
+    
+    // Ensure nextDate is not before today
+    if (nextDate < today) {
+        nextDate = new Date(today);
+        nextDate.setDate(today.getDate() + 1);
+    }
+    
+    return nextDate.toISOString().split('T')[0];
 }
 
 // Show payment history modal for a recurring transaction
@@ -9723,6 +8840,1002 @@ function showPaymentHistoryModal(recurringId) {
     document.body.appendChild(modal);
     document.body.classList.add('modal-open');
 }
+function closeRecurringModal() {
+    if (typeof window.__recurringSystemCloseRecurringModal === 'function') {
+        return window.__recurringSystemCloseRecurringModal();
+    }
+    const modal = document.getElementById('recurringModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+        document.body.classList.remove('modal-open');
+    }
+    if (typeof window.editRecurringIndex !== 'undefined') window.editRecurringIndex = -1;
+}
+
+function createRecurringTransaction() {
+    if (typeof window.__recurringSystemCreateRecurringTransaction === 'function') {
+        return window.__recurringSystemCreateRecurringTransaction();
+    }
+    if (typeof window.__recurringSystemCreateRecurringModal === 'function') {
+        return window.__recurringSystemCreateRecurringModal();
+    }
+}
+
+function editRecurringTransaction(index) {
+    if (typeof window.__recurringSystemEditRecurringTransaction === 'function') {
+        return window.__recurringSystemEditRecurringTransaction(index);
+    }
+}
+
+async function deleteRecurringTransaction(index) {
+    if (typeof window.__recurringSystemDeleteRecurringTransaction === 'function') {
+        return window.__recurringSystemDeleteRecurringTransaction(index);
+    }
+}
+
+function deleteRecurringFromEdit() {
+    if (typeof window.__recurringSystemDeleteRecurringFromEdit === 'function') {
+        return window.__recurringSystemDeleteRecurringFromEdit();
+    }
+}
+
+async function saveRecurringTransaction() {
+    if (typeof window.__recurringSystemSaveRecurringTransaction === 'function') {
+        return window.__recurringSystemSaveRecurringTransaction();
+    }
+}
+
+function renderRecurringTransactions() {
+    if (typeof window.__recurringSystemRenderRecurringTransactions === 'function') {
+        return window.__recurringSystemRenderRecurringTransactions();
+    }
+}
+
+function processRecurringTransactions() {
+    if (typeof window.__recurringSystemProcessRecurringTransactions === 'function') {
+        return window.__recurringSystemProcessRecurringTransactions();
+    }
+}
+
+function trackPaymentTiming(recurringId, transactionId, actualDate, dueDate) {
+    if (typeof window.__recurringSystemTrackPaymentTiming === 'function') {
+        return window.__recurringSystemTrackPaymentTiming(recurringId, transactionId, actualDate, dueDate);
+    }
+}
+
+async function markRecurringAsPaid(recurringId, dueDate) {
+    if (typeof window.__recurringSystemMarkRecurringAsPaid === 'function') {
+        return window.__recurringSystemMarkRecurringAsPaid(recurringId, dueDate);
+    }
+}
+
+function showPaymentHistoryModal(recurringId) {
+    if (typeof window.__recurringSystemShowPaymentHistoryModal === 'function') {
+        return window.__recurringSystemShowPaymentHistoryModal(recurringId);
+    }
+}
+
+function getPremiumRecurringStatus(recurring) {
+    if (typeof window.__recurringSystemGetPremiumRecurringStatus === 'function') {
+        return window.__recurringSystemGetPremiumRecurringStatus(recurring);
+    }
+    return { text: 'Unknown', type: 'future', icon: 'fa-calendar-check' };
+}
+
+// ===== CONSOLIDATED RECURRING TRANSACTIONS SYSTEM =====
+(function () {
+    if (window.__recurringSystemInitialized) return;
+    window.__recurringSystemInitialized = true;
+
+    function ensureRecurringState() {
+        if (!window.recurringTransactions) window.recurringTransactions = [];
+        if (!window.transactions) window.transactions = [];
+    }
+
+    function notifyRecurring(type, message) {
+        if (window.sileo) {
+            if (type === 'success') window.sileo.success(message, 'Success');
+            else if (type === 'error') window.sileo.error(message, 'Error');
+            else if (type === 'warning') window.sileo.warning(message, 'Warning');
+            else window.sileo.info(message, 'Info');
+        } else {
+            console.log(`[Recurring] ${message}`);
+        }
+    }
+
+    function escapeHtml(value) {
+        if (value === null || value === undefined) return '';
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function createRecurringModal() {
+        let modal = document.getElementById('recurringModal');
+        if (modal) return modal;
+
+        modal = document.createElement('div');
+        modal.id = 'recurringModal';
+        modal.className = 'recurring-modal';
+        modal.innerHTML = `
+            <div class="recurring-modal-content">
+                <div class="recurring-modal-header">
+                    <h2 id="recurringModalTitle">New Recurring Transaction</h2>
+                    <button type="button" class="close-btn" onclick="closeRecurringModal()">✕</button>
+                </div>
+                <form id="recurringForm" class="recurring-form">
+                    <div id="recurringFormStatus" class="form-status" style="display: none;"></div>
+                    <div class="form-group form-row-full">
+                        <label>Transaction Name <span class="required">*</span></label>
+                        <input type="text" id="recurringName" placeholder="e.g., Rent, Netflix, Salary" required autocomplete="off">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Type <span class="required">*</span></label>
+                            <select id="recurringType" required>
+                                <option value="expense">Expense</option>
+                                <option value="income">Income</option>
+                                <option value="savings">Savings</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Amount <span class="required">*</span></label>
+                            <input type="number" id="recurringAmount" placeholder="0.00" min="0.01" step="0.01" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Category <span class="required">*</span></label>
+                            <select id="recurringCategory" required></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Frequency <span class="required">*</span></label>
+                            <select id="recurringFrequency" required>
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="monthly" selected>Monthly</option>
+                                <option value="yearly">Yearly</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group form-row-full">
+                        <label>Day of Month (1-31) <span class="required">*</span> <span class="help" id="dayHelp">Optional for non-monthly</span></label>
+                        <input type="number" id="recurringDayOfMonth" min="1" max="31" value="1" required>
+                    </div>
+                    <div class="form-group">
+                        <div class="checkbox-wrapper">
+                            <input type="checkbox" id="recurringActive" checked>
+                            <label for="recurringActive">Active - Transaction will auto-generate</label>
+                        </div>
+                    </div>
+                </form>
+                <div class="recurring-modal-footer">
+                    <button type="button" class="btn-cancel" onclick="closeRecurringModal()">Cancel</button>
+                    <button type="button" id="recurringDeleteBtn" class="btn-delete" onclick="deleteRecurringFromEdit()" style="display: none;">🗑️ Delete</button>
+                    <button type="button" class="btn-save" onclick="saveRecurringTransaction()">Save</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        const typeSelect = modal.querySelector('#recurringType');
+        const categorySelect = modal.querySelector('#recurringCategory');
+        const frequencySelect = modal.querySelector('#recurringFrequency');
+        const dayField = modal.querySelector('#recurringDayOfMonth');
+        const dayHelp = modal.querySelector('#dayHelp');
+
+        function updateCategories() {
+            const type = typeSelect?.value || 'expense';
+            const categories = type === 'income' ? incomeCats : type === 'savings' ? savingsCats : expenseCats;
+            categorySelect.innerHTML = categories.map((cat) => `<option value="${cat}">${cat}</option>`).join('');
+        }
+
+        function updateDayVisibility() {
+            const freq = frequencySelect?.value || 'monthly';
+            if (freq === 'monthly' || freq === 'yearly') {
+                dayField.parentElement.style.display = 'flex';
+                dayHelp.style.display = 'inline';
+            } else {
+                dayField.parentElement.style.display = 'flex';
+                dayHelp.innerHTML = 'Ignored for daily/weekly';
+            }
+        }
+
+        // Remove old listeners to prevent duplicates
+        typeSelect.removeEventListener('change', updateCategories);
+        frequencySelect.removeEventListener('change', updateDayVisibility);
+        
+        // Add event listeners
+        typeSelect.addEventListener('change', updateCategories);
+        frequencySelect.addEventListener('change', updateDayVisibility);
+        updateCategories();
+        updateDayVisibility();
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeRecurringModal();
+        });
+        return modal;
+    }
+
+    function updateRecurringCategories() {
+        const modal = document.getElementById('recurringModal') || createRecurringModal();
+        const type = modal.querySelector('#recurringType')?.value || 'expense';
+        const categorySelect = modal.querySelector('#recurringCategory');
+        if (!categorySelect) return;
+        const categories = type === 'income' ? incomeCats : type === 'savings' ? savingsCats : expenseCats;
+        categorySelect.innerHTML = categories.map((cat) => `<option value="${cat}">${cat}</option>`).join('');
+    }
+
+    function closeRecurringModal() {
+        const modal = document.getElementById('recurringModal');
+        if (modal) {
+            modal.classList.remove('active');
+            modal.style.display = 'none';
+            document.body.classList.remove('modal-open');
+        }
+        editRecurringIndex = -1;
+        window.editRecurringIndex = -1;
+    }
+
+    function createRecurringTransaction() {
+        ensureRecurringState();
+        createRecurringModal();
+        const modal = document.getElementById('recurringModal');
+        if (!modal) return;
+
+        document.getElementById('recurringName').value = '';
+        document.getElementById('recurringAmount').value = '';
+        document.getElementById('recurringType').value = 'expense';
+        document.getElementById('recurringFrequency').value = 'monthly';
+        document.getElementById('recurringDayOfMonth').value = '1';
+        document.getElementById('recurringActive').checked = true;
+        document.getElementById('recurringModalTitle').innerHTML = '<i class="fas fa-plus"></i> Add Recurring Transaction';
+        document.getElementById('recurringDeleteBtn').style.display = 'none';
+        
+        // Ensure event listener is attached for type change
+        const typeSelect = document.getElementById('recurringType');
+        typeSelect.removeEventListener('change', updateRecurringCategories);
+        typeSelect.addEventListener('change', updateRecurringCategories);
+        
+        updateRecurringCategories();
+        editRecurringIndex = -1;
+        window.editRecurringIndex = -1;
+        modal.classList.add('active');
+        modal.style.display = 'flex';
+        document.body.classList.add('modal-open');
+    }
+
+    function editRecurringTransaction(index) {
+        ensureRecurringState();
+        const recurring = window.recurringTransactions[index];
+        if (!recurring) return;
+
+        const modal = document.getElementById('recurringModal') || createRecurringModal();
+        document.getElementById('recurringName').value = recurring.name || '';
+        document.getElementById('recurringAmount').value = recurring.amount || '';
+        document.getElementById('recurringType').value = recurring.type || 'expense';
+        document.getElementById('recurringFrequency').value = recurring.frequency || 'monthly';
+        document.getElementById('recurringDayOfMonth').value = recurring.dayOfMonth || 1;
+        document.getElementById('recurringActive').checked = recurring.isActive !== false;
+
+        // Ensure event listener is attached for type change
+        const typeSelect = document.getElementById('recurringType');
+        typeSelect.removeEventListener('change', updateRecurringCategories);
+        typeSelect.addEventListener('change', updateRecurringCategories);
+        
+        updateRecurringCategories();
+        document.getElementById('recurringCategory').value = recurring.category || '';
+
+        document.getElementById('recurringModalTitle').innerHTML = '<i class="fas fa-edit"></i> Edit Recurring Transaction';
+        document.getElementById('recurringDeleteBtn').style.display = 'block';
+
+        editRecurringIndex = index;
+        window.editRecurringIndex = index;
+
+        modal.classList.add('active');
+        modal.style.display = 'flex';
+        document.body.classList.add('modal-open');
+    }
+
+    async function deleteRecurringTransaction(index) {
+        ensureRecurringState();
+        const recurring = window.recurringTransactions[index];
+        if (!recurring) return;
+
+        const confirmed = confirm(`Delete ${recurring.name || 'this recurring transaction'}?`);
+        if (!confirmed) return;
+
+        window.recurringTransactions.splice(index, 1);
+        try {
+            if (typeof saveToFirebase === 'function') await saveToFirebase();
+        } catch (error) {
+            console.warn('Recurring delete sync failed:', error);
+        }
+        renderRecurringTransactions();
+        notifyRecurring('success', 'Recurring transaction deleted');
+    }
+
+    function deleteRecurringFromEdit() {
+        if (editRecurringIndex < 0) return;
+        deleteRecurringTransaction(editRecurringIndex);
+        closeRecurringModal();
+    }
+
+    async function saveRecurringTransaction() {
+        ensureRecurringState();
+        const name = document.getElementById('recurringName')?.value?.trim();
+        const amount = parseFloat(document.getElementById('recurringAmount')?.value);
+        const type = document.getElementById('recurringType')?.value || 'expense';
+        const category = document.getElementById('recurringCategory')?.value;
+        const frequency = document.getElementById('recurringFrequency')?.value || 'monthly';
+        const dayOfMonth = parseInt(document.getElementById('recurringDayOfMonth')?.value || 1, 10);
+        const isActive = document.getElementById('recurringActive')?.checked !== false;
+
+        if (!name) {
+            notifyRecurring('error', 'Please enter a transaction name');
+            return;
+        }
+        if (!category) {
+            notifyRecurring('error', 'Please select a category');
+            return;
+        }
+        if (Number.isNaN(amount) || amount <= 0) {
+            notifyRecurring('error', 'Please enter a valid amount');
+            return;
+        }
+
+        const recurringData = {
+            id: `recurring_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+            name,
+            amount,
+            category,
+            type,
+            frequency,
+            dayOfMonth: Math.min(31, Math.max(1, dayOfMonth)),
+            isActive,
+            createdAt: new Date().toISOString(),
+            lastGenerated: null,
+            paymentHistory: [],
+            paymentStats: null,
+            nextDueDate: null
+        };
+
+        if (editRecurringIndex >= 0 && window.recurringTransactions[editRecurringIndex]) {
+            recurringData.id = window.recurringTransactions[editRecurringIndex].id;
+            recurringData.createdAt = window.recurringTransactions[editRecurringIndex].createdAt || recurringData.createdAt;
+            recurringData.lastGenerated = window.recurringTransactions[editRecurringIndex].lastGenerated || null;
+            recurringData.paymentHistory = window.recurringTransactions[editRecurringIndex].paymentHistory || [];
+            recurringData.paymentStats = window.recurringTransactions[editRecurringIndex].paymentStats || null;
+            recurringData.nextDueDate = window.recurringTransactions[editRecurringIndex].nextDueDate || null;
+            window.recurringTransactions[editRecurringIndex] = recurringData;
+            notifyRecurring('success', 'Recurring transaction updated');
+        } else {
+            window.recurringTransactions.push(recurringData);
+            notifyRecurring('success', 'Recurring transaction created');
+        }
+
+        try {
+            if (typeof saveToFirebase === 'function') await saveToFirebase();
+        } catch (error) {
+            console.warn('Recurring save sync failed:', error);
+        }
+
+        closeRecurringModal();
+        renderRecurringTransactions();
+    }
+
+    function renderRecurringTransactions() {
+        ensureRecurringState();
+        const container = document.getElementById('recurringContainer');
+        const emptyState = document.getElementById('recurringEmpty');
+
+        if (!container) {
+            setTimeout(renderRecurringTransactions, 500);
+            return;
+        }
+
+        if (window.recurringTransactions.length === 0) {
+            container.style.display = 'none';
+            if (emptyState) {
+                emptyState.style.display = 'block';
+                emptyState.innerHTML = `
+                    <div class="recurring-empty-premium">
+                        <i class="fas fa-sync-alt"></i>
+                        <h3>No Recurring Transactions</h3>
+                        <p>Set up automatic transactions for bills, subscriptions, and regular income.</p>
+                        <button class="btn-add-recurring-premium" onclick="createRecurringTransaction()" style="margin-top: 24px;">
+                            <i class="fas fa-plus"></i> Create First Recurring
+                        </button>
+                    </div>
+                `;
+            }
+            updateRecurringStatsBar();
+            return;
+        }
+
+        container.style.display = 'grid';
+        if (emptyState) emptyState.style.display = 'none';
+
+        const sortedTransactions = [...window.recurringTransactions].sort((a, b) => {
+            const priority = { overdue: 0, today: 1, soon: 2, week: 3, 'two-weeks': 4, future: 5, paused: 6 };
+            const priorityA = priority[getPremiumRecurringStatus(a).type] || 4;
+            const priorityB = priority[getPremiumRecurringStatus(b).type] || 4;
+            if (priorityA !== priorityB) return priorityA - priorityB;
+            return getDaysUntilNext(a) - getDaysUntilNext(b);
+        });
+
+        const getTypeIcon = (type) => ({ expense: 'fa-shopping-cart', income: 'fa-arrow-up', savings: 'fa-piggy-bank' }[type] || 'fa-tag');
+        const getTypeColor = (type) => ({ expense: '#ef4444', income: '#10b981', savings: '#3b82f6' }[type] || '#6b7280');
+        const getFrequencyClass = (frequency) => ({ daily: 'frequency-daily-premium', weekly: 'frequency-weekly-premium', monthly: 'frequency-monthly-premium', yearly: 'frequency-yearly-premium' }[frequency] || 'frequency-monthly-premium');
+        const circumference = 2 * Math.PI * 45;
+
+        let html = '';
+        sortedTransactions.forEach((recurring) => {
+            const actualIndex = window.recurringTransactions.findIndex((item) => item.id === recurring.id);
+            const typeColor = getTypeColor(recurring.type);
+            const status = getPremiumRecurringStatus(recurring);
+            const daysUntil = getDaysUntilNext(recurring);
+            const nextDateFormatted = formatNextDatePremium(recurring);
+            let progressColor = '#10b981';
+            if (daysUntil <= 3) progressColor = '#ef4444';
+            else if (daysUntil <= 7) progressColor = '#f59e0b';
+            else if (daysUntil <= 14) progressColor = '#8b5cf6';
+            const strokeDashoffset = circumference - (Math.min(100, Math.max(0, (daysUntil / 30) * 100)) / 100) * circumference;
+            const stats = recurring.paymentStats;
+            const showPaymentStats = stats && stats.totalPayments > 0;
+            const lastPaymentTiming = stats ? stats.lastPaymentTiming : null;
+            let timingBadge = '';
+            if (lastPaymentTiming === 'early') timingBadge = '<span class="payment-timing-badge payment-timing-early"><i class="fas fa-calendar-check"></i> Early</span>';
+            else if (lastPaymentTiming === 'late') timingBadge = '<span class="payment-timing-badge payment-timing-late"><i class="fas fa-calendar-exclamation"></i> Late</span>';
+            else if (lastPaymentTiming === 'on-time') timingBadge = '<span class="payment-timing-badge payment-timing-on-time"><i class="fas fa-check"></i> On time</span>';
+
+            let paymentStatsHtml = '';
+            if (showPaymentStats) {
+                paymentStatsHtml = `
+                    <div class="payment-stats">
+                        <div class="payment-stat early"><i class="fas fa-check-circle"></i> ${stats.earlyPercentage.toFixed(0)}%</div>
+                        <div class="payment-stat on-time"><i class="fas fa-minus-circle"></i> ${stats.onTimePercentage.toFixed(0)}%</div>
+                        <div class="payment-stat late"><i class="fas fa-exclamation-circle"></i> ${stats.latePercentage.toFixed(0)}%</div>
+                    </div>
+                `;
+            }
+
+            let dayRow = '';
+            if (recurring.frequency === 'monthly' || recurring.frequency === 'yearly') {
+                dayRow = `<div class="detail-row"><span>Day</span><span>Day ${recurring.dayOfMonth || 1} of month</span></div>`;
+            }
+
+            html += `
+                <div class="recurring-card" data-status="${status.type}">
+                    <div class="recurring-card-header">
+                        <div class="recurring-name">
+                            <i class="${getTypeIcon(recurring.type)}" style="color: ${typeColor}; background: ${typeColor}10;"></i>
+                            <h4>${escapeHtml(recurring.name)}</h4>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div class="status-badge-modern status-${status.type}">
+                                <i class="fas ${status.icon}"></i> ${status.text}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="recurring-card-body">
+                        <div class="detail-row"><span>Category</span><span class="category-tag">${escapeHtml(recurring.category)}</span></div>
+                        <div class="detail-row"><span>Frequency</span><span class="frequency-badge-premium ${getFrequencyClass(recurring.frequency)}">${(recurring.frequency || 'monthly').charAt(0).toUpperCase() + (recurring.frequency || 'monthly').slice(1)}</span></div>
+                        ${dayRow}
+                        ${timingBadge ? '<div class="detail-row"><span>Last</span>' + timingBadge + '</div>' : ''}
+                        <div class="countdown-container">
+                            <div class="countdown-ring">
+                                <svg width="60" height="60" viewBox="0 0 120 120" class="countdonut-svg">
+                                    <circle cx="60" cy="60" r="45" fill="none" stroke="var(--gray-300)" stroke-width="8" class="countdonut-bg"/>
+                                    <circle cx="60" cy="60" r="45" fill="none" stroke="${progressColor}" stroke-width="8" stroke-dasharray="${circumference}" stroke-dashoffset="${strokeDashoffset}" class="countdonut-fill" transform="rotate(-90 60 60)"/>
+                                </svg>
+                                <div class="countdown-number" style="color: ${progressColor};">${daysUntil}</div>
+                            </div>
+                            <div class="countdown-info">
+                                <div class="countdown-label">NEXT</div>
+                                <div class="countdown-value">${nextDateFormatted}</div>
+                                <div class="countdown-date">${daysUntil === 0 ? 'Due today!' : 'in ' + daysUntil + ' day' + (daysUntil !== 1 ? 's' : '')}</div>
+                            </div>
+                        </div>
+                        ${paymentStatsHtml}
+                        <div class="recurring-amount-premium">
+                            <span class="amount-label-premium">AMOUNT</span>
+                            <span class="amount-value-premium">${formatCurrency(recurring.amount)}</span>
+                        </div>
+                    </div>
+                    <div class="recurring-card-footer">
+                        <button class="card-btn-premium card-btn-edit" onclick="editRecurringTransaction(${actualIndex})"><i class="fas fa-edit"></i> Edit</button>
+                        <button class="card-btn-premium card-btn-history" onclick="showPaymentHistoryModal('${recurring.id}')"><i class="fas fa-chart-line"></i> History</button>
+                        <button class="card-btn-premium card-btn-delete" onclick="deleteRecurringTransaction(${actualIndex})"><i class="fas fa-trash"></i> Delete</button>
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+        updateRecurringStatsBar();
+    }
+
+    function getDaysBetween(date1, date2) {
+        const d1 = new Date(date1);
+        const d2 = new Date(date2);
+        d1.setHours(0, 0, 0, 0);
+        d2.setHours(0, 0, 0, 0);
+        return Math.floor((d2 - d1) / (1000 * 60 * 60 * 24));
+    }
+
+    function getNextOccurrence(recurring) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        // If there's a nextDueDate and it's in the future, return it directly (already calculated)
+        if (recurring.nextDueDate) {
+            const nextDate = new Date(recurring.nextDueDate);
+            nextDate.setHours(0, 0, 0, 0);
+            if (nextDate >= today) {
+                return nextDate;
+            }
+        }
+        
+        const baseDate = recurring.lastGenerated ? new Date(recurring.lastGenerated) : new Date(today);
+        baseDate.setHours(0, 0, 0, 0);
+        let nextDate = new Date(baseDate);
+        const targetDay = parseInt(recurring.dayOfMonth, 10) || 1;
+
+        switch (recurring.frequency) {
+            case 'daily':
+                nextDate.setDate(baseDate.getDate() + 1);
+                break;
+            case 'weekly':
+                nextDate.setDate(baseDate.getDate() + 7);
+                break;
+            case 'monthly':
+                nextDate.setMonth(baseDate.getMonth() + 1);
+                nextDate.setDate(targetDay);
+                if (nextDate.getDate() !== targetDay) nextDate = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0);
+                break;
+            case 'yearly':
+                nextDate.setFullYear(baseDate.getFullYear() + 1);
+                nextDate.setDate(targetDay);
+                break;
+            default:
+                nextDate.setDate(baseDate.getDate() + 1);
+        }
+
+        while (nextDate < today) {
+            switch (recurring.frequency) {
+                case 'daily': nextDate.setDate(nextDate.getDate() + 1); break;
+                case 'weekly': nextDate.setDate(nextDate.getDate() + 7); break;
+                case 'monthly': nextDate.setMonth(nextDate.getMonth() + 1); break;
+                case 'yearly': nextDate.setFullYear(nextDate.getFullYear() + 1); break;
+                default: nextDate.setDate(nextDate.getDate() + 1);
+            }
+        }
+        return nextDate;
+    }
+
+    function calculateNextDueDate(recurring, baseDate = null) {
+        const startDate = baseDate ? new Date(baseDate) : (recurring.lastGenerated ? new Date(recurring.lastGenerated) : new Date());
+        startDate.setHours(0, 0, 0, 0);
+        const nextDate = new Date(startDate);
+        const targetDay = parseInt(recurring.dayOfMonth, 10) || 1;
+
+        switch (recurring.frequency) {
+            case 'daily':
+                nextDate.setDate(startDate.getDate() + 1);
+                break;
+            case 'weekly':
+                nextDate.setDate(startDate.getDate() + 7);
+                break;
+            case 'monthly':
+                nextDate.setMonth(startDate.getMonth() + 1);
+                nextDate.setDate(targetDay);
+                if (nextDate.getDate() !== targetDay) nextDate.setDate(0);
+                break;
+            case 'yearly':
+                nextDate.setFullYear(startDate.getFullYear() + 1);
+                nextDate.setDate(targetDay);
+                break;
+            default:
+                nextDate.setDate(startDate.getDate() + 1);
+        }
+        return nextDate;
+    }
+
+    function getDaysUntilNext(recurring) {
+        const nextDate = getNextOccurrence(recurring);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        nextDate.setHours(0, 0, 0, 0);
+        return Math.ceil((nextDate - today) / (1000 * 60 * 60 * 24));
+    }
+
+    function getPremiumRecurringStatus(recurring) {
+        const daysUntil = getDaysUntilNext(recurring);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const lastGen = recurring.lastGenerated ? new Date(recurring.lastGenerated) : null;
+
+        if (!recurring.isActive) return { text: 'Paused', type: 'paused', icon: 'fa-pause-circle' };
+        if (recurring.frequency === 'daily' && lastGen) {
+            const lastGenDate = new Date(lastGen);
+            lastGenDate.setHours(0, 0, 0, 0);
+            if (Math.floor((today - lastGenDate) / (1000 * 60 * 60 * 24)) > 1) return { text: 'Overdue', type: 'overdue', icon: 'fa-exclamation-triangle' };
+        }
+        if (daysUntil === 0) return { text: 'Due Today', type: 'today', icon: 'fa-calendar-day' };
+        if (daysUntil <= 3) return { text: `${daysUntil} day${daysUntil !== 1 ? 's' : ''} left`, type: 'soon', icon: 'fa-hourglass-half' };
+        if (daysUntil <= 7) return { text: `${daysUntil} days left`, type: 'week', icon: 'fa-calendar-week' };
+        if (daysUntil <= 14) return { text: `${daysUntil} days left`, type: 'two-weeks', icon: 'fa-calendar-alt' };
+        return { text: `${daysUntil} days left`, type: 'future', icon: 'fa-calendar-check' };
+    }
+
+    function formatNextDatePremium(recurring) {
+        const nextDate = getNextOccurrence(recurring);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        nextDate.setHours(0, 0, 0, 0);
+        const diffDays = Math.ceil((nextDate - today) / (1000 * 60 * 60 * 24));
+        if (diffDays === 0) return 'Today';
+        if (diffDays === 1) return 'Tomorrow';
+        if (diffDays < 7) return nextDate.toLocaleDateString('en-US', { weekday: 'long' });
+        return nextDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
+
+    function updateRecurringStatsBar() {
+        const statsBar = document.getElementById('recurringStatsBar');
+        if (!statsBar || !window.recurringTransactions) return;
+
+        const total = window.recurringTransactions.length;
+        const active = window.recurringTransactions.filter((r) => r.isActive).length;
+        let overdue = 0;
+        let dueToday = 0;
+        let totalExpenses = 0;
+        let totalIncome = 0;
+        let totalSavings = 0;
+
+        window.recurringTransactions.forEach((r) => {
+            if (!r.isActive) return;
+            const status = getPremiumRecurringStatus(r);
+            if (status.type === 'overdue') overdue++;
+            if (status.type === 'today') dueToday++;
+            if (r.type === 'expense') totalExpenses += Number(r.amount) || 0;
+            else if (r.type === 'income') totalIncome += Number(r.amount) || 0;
+            else if (r.type === 'savings') totalSavings += Number(r.amount) || 0;
+        });
+
+        statsBar.innerHTML = `
+            <div class="recurring-stat-card"><span class="recurring-stat-value" style="color: var(--primary);">${total}</span><span class="recurring-stat-label">Total</span></div>
+            <div class="recurring-stat-card"><span class="recurring-stat-value" style="color: #10b981;">${active}</span><span class="recurring-stat-label">Active</span></div>
+            ${overdue > 0 ? `<div class="recurring-stat-card"><span class="recurring-stat-value" style="color: #ef4444;">${overdue}</span><span class="recurring-stat-label">Overdue</span></div>` : ''}
+            ${dueToday > 0 ? `<div class="recurring-stat-card"><span class="recurring-stat-value" style="color: #f59e0b;">${dueToday}</span><span class="recurring-stat-label">Due Today</span></div>` : ''}
+            <div class="recurring-stat-card" style="background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.2);"><span class="recurring-stat-value" style="color: #ef4444;">${formatCurrency(totalExpenses)}</span><span class="recurring-stat-label">💸 Expenses</span></div>
+            <div class="recurring-stat-card" style="background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.2);"><span class="recurring-stat-value" style="color: #10b981;">${formatCurrency(totalIncome)}</span><span class="recurring-stat-label">💰 Income</span></div>
+            <div class="recurring-stat-card" style="background: rgba(59, 130, 246, 0.08); border-color: rgba(59, 130, 246, 0.2);"><span class="recurring-stat-value" style="color: #3b82f6;">${formatCurrency(totalSavings)}</span><span class="recurring-stat-label">🏦 Savings</span></div>
+        `;
+    }
+
+    function addRecurringStatsBar() {
+        const recurringSection = document.getElementById('recurringSection');
+        if (!recurringSection) return;
+        if (!document.getElementById('recurringStatsBar')) {
+            const statsBar = document.createElement('div');
+            statsBar.id = 'recurringStatsBar';
+            statsBar.className = 'recurring-stats-bar';
+            const header = recurringSection.querySelector('.recurring-header');
+            if (header) header.insertAdjacentElement('afterend', statsBar);
+        }
+    }
+
+    function enhanceAddRecurringButton() {
+        const addBtn = document.querySelector('.btn-add-recurring');
+        if (addBtn && !addBtn.classList.contains('btn-add-recurring-premium')) {
+            addBtn.classList.add('btn-add-recurring-premium');
+            const icon = addBtn.querySelector('i');
+            if (icon) icon.className = 'fas fa-plus';
+        }
+    }
+
+    function initPremiumRecurringUI() {
+        addRecurringStatsBar();
+        enhanceAddRecurringButton();
+        window.renderRecurringTransactions = renderRecurringTransactions;
+        window.renderPremiumRecurringTransactions = renderRecurringTransactions;
+        setTimeout(() => renderRecurringTransactions(), 300);
+    }
+
+    function processRecurringTransactions() {
+        ensureRecurringState();
+        if (!window.recurringTransactions.length) return;
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayStr = today.toISOString().split('T')[0];
+        const generated = [];
+
+        window.recurringTransactions.forEach((recurring, index) => {
+            if (!recurring.isActive) return;
+            const lastGenerated = recurring.lastGenerated ? new Date(recurring.lastGenerated) : null;
+            if (lastGenerated) lastGenerated.setHours(0, 0, 0, 0);
+            const nextDueDateValue = recurring.nextDueDate ? new Date(recurring.nextDueDate) : getNextOccurrence(recurring);
+            nextDueDateValue.setHours(0, 0, 0, 0);
+            const shouldGenerate = nextDueDateValue <= today && (!lastGenerated || lastGenerated < nextDueDateValue);
+            if (!shouldGenerate) return;
+
+            const transactionId = `${recurring.id}_${Date.now()}`;
+            const transaction = {
+                id: transactionId,
+                type: recurring.type,
+                category: recurring.category,
+                amount: recurring.amount,
+                date: todayStr,
+                note: `[Auto] ${recurring.name}`,
+                createdAt: new Date().toISOString(),
+                recurringId: recurring.id
+            };
+
+            generated.push(transaction);
+            window.transactions.unshift(transaction);
+            window.recurringTransactions[index].lastGenerated = todayStr;
+            window.recurringTransactions[index].nextDueDate = calculateNextDueDate(recurring, nextDueDateValue).toISOString().split('T')[0];
+            trackPaymentTiming(recurring.id, transactionId, todayStr, nextDueDateValue.toISOString().split('T')[0]);
+        });
+
+        if (generated.length) {
+            if (typeof render === 'function') render();
+            renderRecurringTransactions();
+            if (typeof saveToFirebase === 'function') saveToFirebase();
+            console.log(`✅ Auto-generated ${generated.length} recurring transactions`);
+        }
+    }
+
+    function trackPaymentTiming(recurringId, transactionId, actualDate, dueDate) {
+        if (!actualDate || !dueDate) return;
+        const actual = new Date(actualDate);
+        const due = new Date(dueDate);
+        actual.setHours(0, 0, 0, 0);
+        due.setHours(0, 0, 0, 0);
+
+        let timing = 'on-time';
+        let daysDiff = 0;
+        if (actual < due) {
+            timing = 'early';
+            daysDiff = Math.ceil((due - actual) / (1000 * 60 * 60 * 24));
+        } else if (actual > due) {
+            timing = 'late';
+            daysDiff = Math.ceil((actual - due) / (1000 * 60 * 60 * 24));
+        }
+
+        const recurringIndex = window.recurringTransactions.findIndex((item) => item.id === recurringId);
+        if (recurringIndex === -1) return;
+        if (!window.recurringTransactions[recurringIndex].paymentHistory) window.recurringTransactions[recurringIndex].paymentHistory = [];
+
+        window.recurringTransactions[recurringIndex].paymentHistory.push({
+            transactionId,
+            dueDate,
+            paidDate: actualDate,
+            timing,
+            daysDiff,
+            amount: window.recurringTransactions[recurringIndex].amount
+        });
+        if (window.recurringTransactions[recurringIndex].paymentHistory.length > 20) {
+            window.recurringTransactions[recurringIndex].paymentHistory = window.recurringTransactions[recurringIndex].paymentHistory.slice(-20);
+        }
+        updatePaymentStats(recurringIndex);
+    }
+
+    function updatePaymentStats(recurringIndex) {
+        const recurring = window.recurringTransactions[recurringIndex];
+        if (!recurring) return;
+        if (!recurring.paymentHistory || recurring.paymentHistory.length === 0) {
+            recurring.paymentStats = { earlyCount: 0, lateCount: 0, onTimeCount: 0, totalPayments: 0, earlyPercentage: 0, latePercentage: 0, onTimePercentage: 0, avgDaysEarly: 0, avgDaysLate: 0, lastPaymentTiming: null };
+            return;
+        }
+        const payments = recurring.paymentHistory;
+        const earlyPayments = payments.filter((p) => p.timing === 'early');
+        const latePayments = payments.filter((p) => p.timing === 'late');
+        const onTimePayments = payments.filter((p) => p.timing === 'on-time');
+        const avgDaysEarly = earlyPayments.length ? earlyPayments.reduce((sum, p) => sum + p.daysDiff, 0) / earlyPayments.length : 0;
+        const avgDaysLate = latePayments.length ? latePayments.reduce((sum, p) => sum + p.daysDiff, 0) / latePayments.length : 0;
+        recurring.paymentStats = {
+            earlyCount: earlyPayments.length,
+            lateCount: latePayments.length,
+            onTimeCount: onTimePayments.length,
+            totalPayments: payments.length,
+            earlyPercentage: (earlyPayments.length / payments.length) * 100,
+            latePercentage: (latePayments.length / payments.length) * 100,
+            onTimePercentage: (onTimePayments.length / payments.length) * 100,
+            avgDaysEarly: Math.round(avgDaysEarly * 10) / 10,
+            avgDaysLate: Math.round(avgDaysLate * 10) / 10,
+            lastPaymentTiming: payments[payments.length - 1]?.timing || null
+        };
+    }
+
+    function getPaymentTimingDisplay(paidDate, dueDate) {
+        const paid = new Date(paidDate);
+        const due = new Date(dueDate);
+        paid.setHours(0, 0, 0, 0);
+        due.setHours(0, 0, 0, 0);
+        if (paid < due) {
+            const daysEarly = Math.ceil((due - paid) / (1000 * 60 * 60 * 24));
+            return { text: `${daysEarly} day${daysEarly !== 1 ? 's' : ''} early`, type: 'early' };
+        }
+        if (paid > due) {
+            const daysLate = Math.ceil((paid - due) / (1000 * 60 * 60 * 24));
+            return { text: `${daysLate} day${daysLate !== 1 ? 's' : ''} late`, type: 'late' };
+        }
+        return { text: 'On time', type: 'on-time' };
+    }
+
+    function getNextDueDateStr(recurring) {
+        return getNextOccurrence(recurring).toISOString().split('T')[0];
+    }
+
+    async function markRecurringAsPaid(recurringId, dueDate) {
+        ensureRecurringState();
+        const recurringIndex = window.recurringTransactions.findIndex((item) => item.id === recurringId);
+        if (recurringIndex === -1) {
+            notifyRecurring('error', 'Recurring transaction not found');
+            return;
+        }
+
+        const recurring = window.recurringTransactions[recurringIndex];
+        const alreadyPaid = recurring.paymentHistory?.some((entry) => entry.dueDate === dueDate);
+        if (alreadyPaid) {
+            notifyRecurring('warning', 'Already marked as paid for this period');
+            return;
+        }
+
+        const today = new Date();
+        const todayStr = today.toISOString().split('T')[0];
+        const transaction = {
+            id: `${recurringId}_${Date.now()}`,
+            type: recurring.type,
+            category: recurring.category,
+            amount: recurring.amount,
+            date: todayStr,
+            note: `[Paid] ${recurring.name}`,
+            createdAt: new Date().toISOString(),
+            recurringId,
+            isManualPayment: true
+        };
+
+        window.transactions.unshift(transaction);
+        recurring.lastGenerated = todayStr;
+        recurring.nextDueDate = calculateNextDueDate(recurring, today).toISOString().split('T')[0];
+        recurring.paymentHistory = recurring.paymentHistory || [];
+        recurring.paymentHistory.push({ transactionId: transaction.id, dueDate, paidDate: todayStr, timing: 'on-time', daysDiff: 0, amount: recurring.amount });
+        updatePaymentStats(recurringIndex);
+
+        try {
+            if (typeof saveToFirebase === 'function') await saveToFirebase();
+        } catch (error) {
+            console.warn('Recurring payment sync failed:', error);
+        }
+
+        if (typeof render === 'function') render();
+        renderRecurringTransactions();
+        notifyRecurring('success', 'Payment recorded successfully');
+    }
+
+    function showPaymentHistoryModal(recurringId) {
+        const recurring = window.recurringTransactions.find((item) => item.id === recurringId);
+        if (!recurring) return;
+
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.id = 'paymentHistoryModal';
+        modal.style.display = 'flex';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 500px;">
+                <button class="modal-close" onclick="this.closest('.modal').remove()">
+                    <i class="fas fa-times"></i>
+                </button>
+                <h2><i class="fas fa-history"></i> Payment History: ${escapeHtml(recurring.name)}</h2>
+                ${recurring.paymentStats ? `
+                <div class="payment-gauge">
+                    <div class="payment-gauge-bar">
+                        <div class="payment-gauge-early" style="width: ${recurring.paymentStats.earlyPercentage}%"></div>
+                        <div class="payment-gauge-on-time" style="width: ${recurring.paymentStats.onTimePercentage}%"></div>
+                        <div class="payment-gauge-late" style="width: ${recurring.paymentStats.latePercentage}%"></div>
+                    </div>
+                    <div class="payment-legend">
+                        <div class="payment-legend-item"><div class="payment-legend-dot early"></div> Early (${recurring.paymentStats.earlyPercentage.toFixed(0)}%)</div>
+                        <div class="payment-legend-item"><div class="payment-legend-dot on-time"></div> On Time (${recurring.paymentStats.onTimePercentage.toFixed(0)}%)</div>
+                        <div class="payment-legend-item"><div class="payment-legend-dot late"></div> Late (${recurring.paymentStats.latePercentage.toFixed(0)}%)</div>
+                    </div>
+                </div>
+                <div class="payment-stats-summary" style="display: flex; gap: 16px; margin: 16px 0; padding: 12px; background: var(--gray-100); border-radius: 16px;">
+                    <div style="flex: 1; text-align: center;"><div style="font-size: 10px; color: var(--gray-500);">AVG EARLY</div><div style="font-size: 18px; font-weight: 700; color: #10b981;">${recurring.paymentStats.avgDaysEarly > 0 ? recurring.paymentStats.avgDaysEarly + 'd' : '-'}</div></div>
+                    <div style="flex: 1; text-align: center;"><div style="font-size: 10px; color: var(--gray-500);">AVG LATE</div><div style="font-size: 18px; font-weight: 700; color: #ef4444;">${recurring.paymentStats.avgDaysLate > 0 ? recurring.paymentStats.avgDaysLate + 'd' : '-'}</div></div>
+                    <div style="flex: 1; text-align: center;"><div style="font-size: 10px; color: var(--gray-500);">TOTAL</div><div style="font-size: 18px; font-weight: 700;">${recurring.paymentStats.totalPayments}</div></div>
+                </div>` : ''}
+                <div style="max-height: 400px; overflow-y: auto;">
+                    ${recurring.paymentHistory && recurring.paymentHistory.length > 0 ? recurring.paymentHistory.slice().reverse().map((p) => `
+                        <div class="payment-history-item ${p.timing}">
+                            <div>
+                                <div class="payment-history-date">Due: ${formatDate(p.dueDate)}</div>
+                                <div class="payment-history-date" style="font-size: 10px;">Paid: ${formatDate(p.paidDate)}</div>
+                            </div>
+                            <div>
+                                <div class="payment-history-amount">${formatCurrency(p.amount)}</div>
+                                <span class="payment-history-badge ${p.timing}">${p.timing === 'early' ? `${p.daysDiff}d early` : p.timing === 'late' ? `${p.daysDiff}d late` : 'On time'}</span>
+                            </div>
+                        </div>
+                    `).join('') : '<div style="text-align: center; padding: 40px;">No payment history yet</div>'}
+                </div>
+                <button class="btn-primary" onclick="markRecurringAsPaid('${recurringId}', '${getNextDueDateStr(recurring)}')" style="margin-top: 16px;"><i class="fas fa-check-circle"></i> Mark Current Period as Paid</button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        document.body.classList.add('modal-open');
+    }
+
+    window.__recurringSystemCreateRecurringTransaction = createRecurringTransaction;
+    window.__recurringSystemCloseRecurringModal = closeRecurringModal;
+    window.__recurringSystemEditRecurringTransaction = editRecurringTransaction;
+    window.__recurringSystemDeleteRecurringTransaction = deleteRecurringTransaction;
+    window.__recurringSystemDeleteRecurringFromEdit = deleteRecurringFromEdit;
+    window.__recurringSystemSaveRecurringTransaction = saveRecurringTransaction;
+    window.__recurringSystemRenderRecurringTransactions = renderRecurringTransactions;
+    window.__recurringSystemProcessRecurringTransactions = processRecurringTransactions;
+    window.__recurringSystemTrackPaymentTiming = trackPaymentTiming;
+    window.__recurringSystemUpdatePaymentStats = updatePaymentStats;
+    window.__recurringSystemShowPaymentHistoryModal = showPaymentHistoryModal;
+    window.__recurringSystemMarkRecurringAsPaid = markRecurringAsPaid;
+    window.__recurringSystemGetNextOccurrence = getNextOccurrence;
+    window.__recurringSystemGetNextDueDateStr = getNextDueDateStr;
+    window.__recurringSystemGetPremiumRecurringStatus = getPremiumRecurringStatus;
+    window.__recurringSystemUpdateRecurringStatsBar = updateRecurringStatsBar;
+
+    window.createRecurringTransaction = window.__recurringSystemCreateRecurringTransaction;
+    window.closeRecurringModal = window.__recurringSystemCloseRecurringModal;
+    window.editRecurringTransaction = window.__recurringSystemEditRecurringTransaction;
+    window.deleteRecurringTransaction = window.__recurringSystemDeleteRecurringTransaction;
+    window.deleteRecurringFromEdit = window.__recurringSystemDeleteRecurringFromEdit;
+    window.saveRecurringTransaction = window.__recurringSystemSaveRecurringTransaction;
+    window.renderRecurringTransactions = window.__recurringSystemRenderRecurringTransactions;
+    window.renderPremiumRecurringTransactions = window.__recurringSystemRenderRecurringTransactions;
+    window.processRecurringTransactions = window.__recurringSystemProcessRecurringTransactions;
+    window.trackPaymentTiming = window.__recurringSystemTrackPaymentTiming;
+    window.updatePaymentStats = window.__recurringSystemUpdatePaymentStats;
+    window.showPaymentHistoryModal = window.__recurringSystemShowPaymentHistoryModal;
+    window.markRecurringAsPaid = window.__recurringSystemMarkRecurringAsPaid;
+    window.getNextOccurrence = window.__recurringSystemGetNextOccurrence;
+    window.getNextDueDateStr = window.__recurringSystemGetNextDueDateStr;
+    window.getPremiumRecurringStatus = window.__recurringSystemGetPremiumRecurringStatus;
+    window.updateRecurringStatsBar = window.__recurringSystemUpdateRecurringStatsBar;
+
+    document.addEventListener('DOMContentLoaded', function () {
+        ensureRecurringState();
+        initPremiumRecurringUI();
+        const addBtn = document.querySelector('.btn-add-recurring');
+        if (addBtn && !addBtn.hasAttribute('data-recurring-bound')) {
+            addBtn.setAttribute('data-recurring-bound', 'true');
+            addBtn.onclick = function (event) {
+                event.preventDefault();
+                createRecurringTransaction();
+            };
+        }
+        setTimeout(() => {
+            processRecurringTransactions();
+            renderRecurringTransactions();
+        }, 1000);
+    });
+
+    setInterval(() => {
+        if (window.recurringTransactions && window.recurringTransactions.length > 0) processRecurringTransactions();
+    }, 60 * 60 * 1000);
+
+    setTimeout(() => {
+        if (window.recurringTransactions && window.recurringTransactions.length > 0) processRecurringTransactions();
+    }, 10000);
+})();
+
+console.log('✅ Reliable recurring transactions system loaded');
+
 // ============================================================
 // RECEIPT SCANNER - FILL FORM WITH GREEN HIGHLIGHTS
 // ============================================================

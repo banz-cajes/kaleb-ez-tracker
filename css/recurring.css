@@ -646,3 +646,23 @@
 .recurring-toggle-switch input:checked + .recurring-toggle-slider:before {
     transform: translateX(24px);
 }
+
+/* Paid badge style */
+.paid-badge {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    padding: 6px 14px;
+    border-radius: 30px;
+    font-size: 12px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    animation: pulseGreen 2s infinite;
+}
+
+@keyframes pulseGreen {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}

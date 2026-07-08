@@ -14,6 +14,7 @@
     <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#6366f1">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Kaleb">
 
@@ -27,8 +28,6 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <!-- Enhanced OCR Libraries -->
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
-<!-- For image preprocessing -->
-<script src="https://cdn.jsdelivr.net/npm/opencv.js@4.5.5/opencv.min.js"></script>
     <!-- Fonts & Icons -->
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
@@ -1297,6 +1296,7 @@
     <script src="js/analytics.js"></script>
     <script src="js/app.js"></script>
 <!-- Receipt Scanner Modal -->
+<!-- Receipt Scanner Modal - CLEAN VERSION -->
 <div id="receiptScannerModal" class="modal" style="display: none;">
     <div class="modal-content" style="max-width: 500px;">
         <button class="modal-close" onclick="closeReceiptScanner()">
@@ -1311,7 +1311,8 @@
                 <canvas id="canvas" style="display: none;"></canvas>
                 <div id="cameraPlaceholder" style="color: var(--gray-400); padding: 40px;">
                     <i class="fas fa-camera" style="font-size: 48px; display: block; margin-bottom: 16px;"></i>
-                    <p>Position receipt in frame and tap capture</p>
+                    <p>Position receipt clearly and tap capture</p>
+                    <p style="font-size: 12px; color: var(--gray-500); margin-top: 8px;">📱 Good lighting = better results</p>
                 </div>
             </div>
             
@@ -1334,6 +1335,7 @@
             <div id="ocrResults" style="display: none; margin-top: 16px; padding: 16px; background: var(--gray-100); border-radius: 16px; text-align: left;">
                 <h4 style="margin-bottom: 12px;"><i class="fas fa-check-circle" style="color: #10b981;"></i> Extracted Data</h4>
                 <div id="ocrResultContent"></div>
+                <!-- ✅ ONLY ONE SET OF BUTTONS HERE -->
                 <div style="display: flex; gap: 12px; margin-top: 16px;">
                     <button class="btn-primary" onclick="useOcrData()" style="flex: 1;">
                         <i class="fas fa-check"></i> Use Data
