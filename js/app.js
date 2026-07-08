@@ -194,6 +194,131 @@ const savingsCats = [
 ];
 const chartColors = ['#2A9D8F', '#E76F51', '#E9C46A', '#4A90E2', '#9B87F5', '#F4A261', '#A8D5E5', '#C44569'];
 
+// 40+ HIGHLY DISTINCT COLORS - Each visibly different
+const categoryColorPalette = [
+    // Warm colors (reds, oranges, yellows)
+    '#E74C3C', // Bright Red
+    '#F39C12', // Orange
+    '#F1C40F', // Yellow
+    '#E67E22', // Dark Orange
+    '#D35400', // Burnt Orange
+    '#C0392B', // Dark Red
+    
+    // Cool colors (blues, teals, cyans)
+    '#2980B9', // Bright Blue
+    '#1ABC9C', // Teal
+    '#16A085', // Dark Teal
+    '#3498DB', // Light Blue
+    '#2ECC71', // Emerald Green
+    '#00BCD4', // Cyan
+    
+    // Purples & Pinks
+    '#8E44AD', // Purple
+    '#9B59B6', // Light Purple
+    '#E91E63', // Pink
+    '#FF6B6B', // Coral Pink
+    '#7B1FA2', // Deep Purple
+    '#D81B60', // Hot Pink
+    
+    // Greens
+    '#27AE60', // Green
+    '#2ECC71', // Light Green
+    '#009688', // Dark Green
+    '#4CAF50', // Medium Green
+    '#8BC34A', // Lime Green
+    '#CDDC39', // Yellow Green
+    
+    // Blues (distinct shades)
+    '#1976D2', // Dark Blue
+    '#42A5F5', // Light Blue
+    '#0277BD', // Ocean Blue
+    '#00ACC1', // Aqua
+    '#00838F', // Deep Teal
+    '#00695C', // Dark Teal
+    
+    // Earth tones
+    '#795548', // Brown
+    '#8D6E63', // Light Brown
+    '#A1887F', // Tan
+    '#FFA726', // Peach
+    
+    // Bright accents
+    '#FF5722', // Deep Orange
+    '#FF6F00', // Amber
+    '#FDD835', // Golden
+    '#C0CA33', // Lime
+    
+    // Unique colors
+    '#607D8B', // Blue Gray
+    '#78909C', // Light Blue Gray
+    '#5D4037', // Dark Brown
+    '#FFAB91', // Salmon
+    '#B39DDB', // Lavender
+    '#80DEEA'  // Light Cyan
+];
+
+// Get a truly distinct color using golden ratio distribution
+function getCategoryColor(categoryName) {
+    if (!categoryName) return '#999999';
+    
+    // Remove emojis for cleaner hashing
+    const cleanName = categoryName.replace(/[\u{1F300}-\u{1FAFF}]/gu, '').trim();
+    
+    // Better hash algorithm (FNV-1a style)
+    let hash = 2166136261;
+    for (let i = 0; i < cleanName.length; i++) {
+        hash ^= cleanName.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    hash = Math.abs(hash);
+    
+    // Use golden ratio to distribute colors evenly
+    const goldenRatio = 0.618033988749895;
+    const distributed = ((hash * goldenRatio) % 1);
+    const colorIndex = Math.floor(distributed * categoryColorPalette.length);
+    
+    return categoryColorPalette[colorIndex];
+}
+
+// Cache for consistent colors across the app
+const categoryColorCache = {};
+
+function getCategoryColorCached(categoryName) {
+    if (!categoryName) return '#999999';
+    if (!categoryColorCache[categoryName]) {
+        categoryColorCache[categoryName] = getCategoryColor(categoryName);
+    }
+    return categoryColorCache[categoryName];
+}
+
+// Helper to group small categories into "Others"
+// Get top categories with "Others" grouping
+function getTopCategories(transactions, maxCategories = 8) {
+    const categoryData = {};
+    transactions.forEach(t => {
+        const category = t.category || 'Uncategorized';
+        // Clean up "Others / Miscellaneous" to just "Others"
+        const cleanCat = category === 'Others / Miscellaneous' ? 'Others' : category;
+        const amount = t.amount || 0;
+        categoryData[cleanCat] = (categoryData[cleanCat] || 0) + amount;
+    });
+    
+    const sorted = Object.entries(categoryData).sort((a, b) => b[1] - a[1]);
+    
+    if (sorted.length <= maxCategories) {
+        return sorted;
+    }
+    
+    const top = sorted.slice(0, maxCategories - 1);
+    const othersTotal = sorted.slice(maxCategories - 1).reduce((sum, item) => sum + item[1], 0);
+    
+    const result = [...top];
+    if (othersTotal > 0) {
+        result.push(['Others', othersTotal]);
+    }
+    return result;
+}
+
 // Utility functions
 function formatDate(dateString) {
     if (!dateString) return '-';
@@ -799,15 +924,25 @@ function render() {
     const incomeHistoryEl = document.getElementById('incomeHistory');
     
     if (expenseHistoryEl) {
-        expenseHistoryEl.innerHTML = Object.entries(expenseByCat).map(([cat, amt]) => 
-            `<div class="breakdown-item"><span>${cat}</span><span class="amount negative">${formatCurrency(amt)}</span></div>`
-        ).join('') || '<div class="breakdown-item">No expenses this month</div>';
+        expenseHistoryEl.innerHTML = Object.entries(expenseByCat).map(([cat, amt]) => {
+            const color = getCategoryColorCached(cat);
+            return `<div class="breakdown-item" style="display: flex; align-items: center; gap: 10px; padding: 8px 0;">
+                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background-color: ${color}; flex-shrink: 0;"></span>
+                <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${cat}</span>
+                <span class="amount negative" style="font-weight: 600; white-space: nowrap;">${formatCurrency(amt)}</span>
+            </div>`;
+        }).join('') || '<div class="breakdown-item" style="text-align: center; color: #999;">No expenses this month</div>';
     }
     
     if (incomeHistoryEl) {
-        incomeHistoryEl.innerHTML = Object.entries(incomeByCat).map(([cat, amt]) => 
-            `<div class="breakdown-item"><span>${cat}</span><span class="amount positive">${formatCurrency(amt)}</span></div>`
-        ).join('') || '<div class="breakdown-item">No income this month</div>';
+        incomeHistoryEl.innerHTML = Object.entries(incomeByCat).map(([cat, amt]) => {
+            const color = getCategoryColorCached(cat);
+            return `<div class="breakdown-item" style="display: flex; align-items: center; gap: 10px; padding: 8px 0;">
+                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background-color: ${color}; flex-shrink: 0;"></span>
+                <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${cat}</span>
+                <span class="amount positive" style="font-weight: 600; white-space: nowrap;">${formatCurrency(amt)}</span>
+            </div>`;
+        }).join('') || '<div class="breakdown-item" style="text-align: center; color: #999;">No income this month</div>';
     }
 
     renderGoals();
@@ -817,9 +952,12 @@ function render() {
 // ===== MISSING FUNCTIONS - ADD THIS BLOCK =====
 
 // ===== FIXED: DELETE TRANSACTION BY ID (WITH CACHE CLEAR) =====
+// Track ongoing operations to prevent duplicates
+window._deletingTransactions = window._deletingTransactions || new Set();
+
 function deleteTransactionById(txId) {
     console.log('🗑️ deleteTransactionById called for ID:', txId);
-    if (!txId) return;
+    if (!txId || window._deletingTransactions.has(txId)) return;
 
     // Find the transaction first
     const index = window.transactions.findIndex(t => t.id === txId);
@@ -833,8 +971,9 @@ function deleteTransactionById(txId) {
     const deletedTx = window.transactions[index];
 
     if (confirm(`Delete this ${deletedTx.type} transaction?\n\nCategory: ${deletedTx.category}\nAmount: ${formatCurrency(deletedTx.amount)}\nDate: ${formatDate(deletedTx.date)}`)) {
+        window._deletingTransactions.add(txId);
         
-        // 1. Remove from local array
+        // 1. Remove from local array immediately
         window.transactions.splice(index, 1);
         
         // 2. Clear from filtered list
@@ -845,74 +984,73 @@ function deleteTransactionById(txId) {
             }
         }
         
-        // 3. Force clear localStorage cache for this user
-        if (window.currentUser) {
-            const cacheKey = 'cajesData_' + window.currentUser.uid;
-            try {
-                const cached = localStorage.getItem(cacheKey);
-                if (cached) {
-                    const data = JSON.parse(cached);
-                    // Remove from cached transactions
-                    data.transactions = data.transactions.filter(t => t.id !== txId);
-                    localStorage.setItem(cacheKey, JSON.stringify(data));
-                    console.log('✅ Cache cleared for deleted transaction');
-                }
-            } catch (e) {
-                console.warn('Could not clear cache:', e);
-            }
-        }
-        
-        // 4. Clear offline backup if exists
-        if (window.UnifiedOfflineManager) {
-            try {
-                const backup = localStorage.getItem('offline_retry_queue');
-                if (backup) {
-                    let queue = JSON.parse(backup);
-                    queue = queue.filter(item => item.data?.id !== txId);
-                    localStorage.setItem('offline_retry_queue', JSON.stringify(queue));
-                }
-            } catch (e) {
-                console.warn('Could not clear retry queue:', e);
-            }
-        }
-        
-        // 5. Save to Firebase (this will remove from cloud)
-        saveToFirebase().then(() => {
-            console.log('✅ Transaction deleted from Firebase');
-        }).catch((error) => {
-            console.warn('Firebase delete failed, but local deleted:', error);
-        });
-        
-        // 6. Render updated view
+        // 3. Render immediately (instant feedback)
         render();
-        
-        // 7. If it was a savings transaction, update savings goal display
         if (deletedTx.type === 'savings' && typeof updateSavingsGoal === 'function') {
             updateSavingsGoal();
         }
         
         if (window.sileo) {
-            window.sileo.success(`${deletedTx.type.charAt(0).toUpperCase() + deletedTx.type.slice(1)} deleted successfully!`, 'Deleted');
+            window.sileo.success(`${deletedTx.type.charAt(0).toUpperCase() + deletedTx.type.slice(1)} deleted!`, 'Deleted');
         }
         
-        // 8. Force a re-sync to prevent reappearing
-        setTimeout(() => {
-            if (typeof manualSync === 'function') {
-                manualSync();
+        // 4. Clear caches asynchronously (non-blocking)
+        Promise.resolve().then(() => {
+            if (window.currentUser) {
+                const cacheKey = 'cajesData_' + window.currentUser.uid;
+                try {
+                    const cached = localStorage.getItem(cacheKey);
+                    if (cached) {
+                        const data = JSON.parse(cached);
+                        data.transactions = data.transactions.filter(t => t.id !== txId);
+                        localStorage.setItem(cacheKey, JSON.stringify(data));
+                    }
+                } catch (e) {
+                    console.warn('Could not clear cache:', e);
+                }
             }
-        }, 1000);
+            
+            if (window.UnifiedOfflineManager) {
+                try {
+                    const backup = localStorage.getItem('offline_retry_queue');
+                    if (backup) {
+                        let queue = JSON.parse(backup);
+                        queue = queue.filter(item => item.data?.id !== txId);
+                        localStorage.setItem('offline_retry_queue', JSON.stringify(queue));
+                    }
+                } catch (e) {
+                    console.warn('Could not clear retry queue:', e);
+                }
+            }
+        });
+        
+        // 5. Save to Firebase in background (non-blocking)
+        if (typeof saveToFirebase === 'function') {
+            saveToFirebase()
+                .catch((error) => {
+                    console.warn('Firebase delete failed, restoring:', error);
+                    window.transactions.splice(index, 0, deletedTx);
+                    render();
+                    if (window.sileo) window.sileo.error('Delete failed - restored', 'Error');
+                })
+                .finally(() => {
+                    window._deletingTransactions.delete(txId);
+                });
+        } else {
+            window._deletingTransactions.delete(txId);
+        }
     }
 }
 
 // Delete current transaction (for modal)
-// ===== FIXED: DELETE CURRENT TRANSACTION (MODAL) =====
+// ===== OPTIMIZED: DELETE CURRENT TRANSACTION (MODAL) =====
 function deleteCurrentTransaction() {
     console.log('🗑️ deleteCurrentTransaction called');
     const modal = document.getElementById('modal');
     const editingId = modal?.getAttribute('data-editing-id');
 
-    if (!editingId) {
-        console.warn('No editing ID found');
+    if (!editingId || window._deletingTransactions.has(editingId)) {
+        console.warn('No editing ID found or already deleting');
         return;
     }
 
@@ -926,8 +1064,9 @@ function deleteCurrentTransaction() {
     const deletedTx = window.transactions[index];
 
     if (confirm(`Delete this ${deletedTx.type}?\n\n${deletedTx.category}\n${formatCurrency(deletedTx.amount)}`)) {
+        window._deletingTransactions.add(editingId);
         
-        // 1. Remove from array
+        // 1. Remove from array immediately
         window.transactions.splice(index, 1);
         
         // 2. Clear from filtered list
@@ -938,49 +1077,59 @@ function deleteCurrentTransaction() {
             }
         }
         
-        // 3. Clear cache
-        if (window.currentUser) {
-            const cacheKey = 'cajesData_' + window.currentUser.uid;
-            try {
-                const cached = localStorage.getItem(cacheKey);
-                if (cached) {
-                    const data = JSON.parse(cached);
-                    data.transactions = data.transactions.filter(t => t.id !== editingId);
-                    localStorage.setItem(cacheKey, JSON.stringify(data));
-                }
-            } catch (e) {
-                console.warn('Could not clear cache:', e);
-            }
-        }
-        
-        // 4. Clear offline retry queue
-        if (window.UnifiedOfflineManager) {
-            try {
-                const backup = localStorage.getItem('offline_retry_queue');
-                if (backup) {
-                    let queue = JSON.parse(backup);
-                    queue = queue.filter(item => item.data?.id !== editingId);
-                    localStorage.setItem('offline_retry_queue', JSON.stringify(queue));
-                }
-            } catch (e) {
-                console.warn('Could not clear retry queue:', e);
-            }
-        }
-        
-        // 5. Save to Firebase
-        saveToFirebase();
-        
-        // 6. Close modal
+        // 3. Close modal and render immediately (instant feedback)
         closeModal();
-        
-        // 7. Render
         render();
-        
-        // 8. Reset edit index
         window.editIndex = -1;
         
         if (window.sileo) {
-            window.sileo.success(`${deletedTx.type} deleted successfully!`, 'Deleted');
+            window.sileo.success(`${deletedTx.type} deleted!`, 'Deleted');
+        }
+        
+        // 4. Clear caches asynchronously (non-blocking)
+        Promise.resolve().then(() => {
+            if (window.currentUser) {
+                const cacheKey = 'cajesData_' + window.currentUser.uid;
+                try {
+                    const cached = localStorage.getItem(cacheKey);
+                    if (cached) {
+                        const data = JSON.parse(cached);
+                        data.transactions = data.transactions.filter(t => t.id !== editingId);
+                        localStorage.setItem(cacheKey, JSON.stringify(data));
+                    }
+                } catch (e) {
+                    console.warn('Could not clear cache:', e);
+                }
+            }
+            
+            if (window.UnifiedOfflineManager) {
+                try {
+                    const backup = localStorage.getItem('offline_retry_queue');
+                    if (backup) {
+                        let queue = JSON.parse(backup);
+                        queue = queue.filter(item => item.data?.id !== editingId);
+                        localStorage.setItem('offline_retry_queue', JSON.stringify(queue));
+                    }
+                } catch (e) {
+                    console.warn('Could not clear retry queue:', e);
+                }
+            }
+        });
+        
+        // 5. Save to Firebase in background (non-blocking)
+        if (typeof saveToFirebase === 'function') {
+            saveToFirebase()
+                .catch((error) => {
+                    console.warn('Firebase delete failed, restoring:', error);
+                    window.transactions.splice(index, 0, deletedTx);
+                    render();
+                    if (window.sileo) window.sileo.error('Delete failed - restored', 'Error');
+                })
+                .finally(() => {
+                    window._deletingTransactions.delete(editingId);
+                });
+        } else {
+            window._deletingTransactions.delete(editingId);
         }
     }
 }
@@ -1646,12 +1795,12 @@ function updateCategoryChart() {
     const sortedCategories = Object.entries(categoryData)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 8); // Show top 8 categories
-
+    const topCategories = getTopCategories(filteredTransactions, 8);
     const labels = sortedCategories.map(item => item[0]);
     const data = sortedCategories.map(item => item[1]);
 
-    // Colors for chart
-    const colors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec489a', '#06b6d4', '#84cc16'];
+    // Get colors using the consistent category color function
+    const colors = labels.map(label => getCategoryColorCached(label));
 
     // Destroy old chart if exists
     if (categoryChart) {
@@ -1723,6 +1872,19 @@ function updateCategoryChart() {
             legendEl.innerHTML = '<div class="legend-item" style="justify-content: center; color: #9ca3af;">No data for selected period</div>';
         }
     }
+}
+
+// Build color legend
+function updateCategoryLegend(labels, colors) {
+    const legendContainer = document.getElementById('categoryColorLegend');
+    if (!legendContainer) return;
+    
+    legendContainer.innerHTML = labels.map((label, i) => `
+        <div class="legend-item-modern">
+            <span class="legend-dot-modern" style="background: ${colors[i]};"></span>
+            <span class="legend-label-modern">${label}</span>
+        </div>
+    `).join('');
 }
 
 // Helper function to toggle chart segments (optional)
@@ -9142,20 +9304,31 @@ function getPremiumRecurringStatus(recurring) {
 
     async function deleteRecurringTransaction(index) {
         ensureRecurringState();
+        if (window._deletingRecurring) return;
+        
         const recurring = window.recurringTransactions[index];
         if (!recurring) return;
 
         const confirmed = confirm(`Delete ${recurring.name || 'this recurring transaction'}?`);
         if (!confirmed) return;
 
-        window.recurringTransactions.splice(index, 1);
-        try {
-            if (typeof saveToFirebase === 'function') await saveToFirebase();
-        } catch (error) {
-            console.warn('Recurring delete sync failed:', error);
-        }
+        window._deletingRecurring = true;
+        const deletedRecurring = window.recurringTransactions.splice(index, 1)[0];
         renderRecurringTransactions();
-        notifyRecurring('success', 'Recurring transaction deleted');
+        notifyRecurring('success', `Deleted!`);
+        
+        try {
+            if (typeof saveToFirebase === 'function') {
+                await saveToFirebase();
+            }
+        } catch (error) {
+            console.warn('Recurring delete sync failed, restoring:', error);
+            window.recurringTransactions.splice(index, 0, deletedRecurring);
+            renderRecurringTransactions();
+            notifyRecurring('error', 'Delete failed - restored');
+        } finally {
+            window._deletingRecurring = false;
+        }
     }
 
     function deleteRecurringFromEdit() {
@@ -9166,6 +9339,8 @@ function getPremiumRecurringStatus(recurring) {
 
     async function saveRecurringTransaction() {
         ensureRecurringState();
+        if (window._savingRecurring) return; // Prevent duplicate save
+        
         const name = document.getElementById('recurringName')?.value?.trim();
         const amount = parseFloat(document.getElementById('recurringAmount')?.value);
         const type = document.getElementById('recurringType')?.value || 'expense';
@@ -9187,44 +9362,53 @@ function getPremiumRecurringStatus(recurring) {
             return;
         }
 
-        const recurringData = {
-            id: `recurring_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
-            name,
-            amount,
-            category,
-            type,
-            frequency,
-            dayOfMonth: Math.min(31, Math.max(1, dayOfMonth)),
-            isActive,
-            createdAt: new Date().toISOString(),
-            lastGenerated: null,
-            paymentHistory: [],
-            paymentStats: null,
-            nextDueDate: null
-        };
-
-        if (editRecurringIndex >= 0 && window.recurringTransactions[editRecurringIndex]) {
-            recurringData.id = window.recurringTransactions[editRecurringIndex].id;
-            recurringData.createdAt = window.recurringTransactions[editRecurringIndex].createdAt || recurringData.createdAt;
-            recurringData.lastGenerated = window.recurringTransactions[editRecurringIndex].lastGenerated || null;
-            recurringData.paymentHistory = window.recurringTransactions[editRecurringIndex].paymentHistory || [];
-            recurringData.paymentStats = window.recurringTransactions[editRecurringIndex].paymentStats || null;
-            recurringData.nextDueDate = window.recurringTransactions[editRecurringIndex].nextDueDate || null;
-            window.recurringTransactions[editRecurringIndex] = recurringData;
-            notifyRecurring('success', 'Recurring transaction updated');
-        } else {
-            window.recurringTransactions.push(recurringData);
-            notifyRecurring('success', 'Recurring transaction created');
-        }
+        window._savingRecurring = true;
+        const wasEdit = editRecurringIndex >= 0;
 
         try {
-            if (typeof saveToFirebase === 'function') await saveToFirebase();
-        } catch (error) {
-            console.warn('Recurring save sync failed:', error);
-        }
+            const recurringData = {
+                id: `recurring_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+                name,
+                amount,
+                category,
+                type,
+                frequency,
+                dayOfMonth: Math.min(31, Math.max(1, dayOfMonth)),
+                isActive,
+                createdAt: new Date().toISOString(),
+                lastGenerated: null,
+                paymentHistory: [],
+                paymentStats: null,
+                nextDueDate: null
+            };
 
-        closeRecurringModal();
-        renderRecurringTransactions();
+            if (wasEdit && window.recurringTransactions[editRecurringIndex]) {
+                recurringData.id = window.recurringTransactions[editRecurringIndex].id;
+                recurringData.createdAt = window.recurringTransactions[editRecurringIndex].createdAt || recurringData.createdAt;
+                recurringData.lastGenerated = window.recurringTransactions[editRecurringIndex].lastGenerated || null;
+                recurringData.paymentHistory = window.recurringTransactions[editRecurringIndex].paymentHistory || [];
+                recurringData.paymentStats = window.recurringTransactions[editRecurringIndex].paymentStats || null;
+                recurringData.nextDueDate = window.recurringTransactions[editRecurringIndex].nextDueDate || null;
+                window.recurringTransactions[editRecurringIndex] = recurringData;
+            } else {
+                window.recurringTransactions.push(recurringData);
+            }
+
+            // Close and render immediately (instant feedback)
+            closeRecurringModal();
+            renderRecurringTransactions();
+            notifyRecurring('success', wasEdit ? 'Updated!' : 'Created!');
+
+            // Save to Firebase in background (non-blocking)
+            if (typeof saveToFirebase === 'function') {
+                await saveToFirebase();
+            }
+        } catch (error) {
+            console.warn('Recurring save error:', error);
+            notifyRecurring('error', 'Save failed');
+        } finally {
+            window._savingRecurring = false;
+        }
     }
 
     function renderRecurringTransactions() {
