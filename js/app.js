@@ -949,10 +949,7 @@ function render() {
     renderBills();
 }
 
-// ===== MISSING FUNCTIONS - ADD THIS BLOCK =====
-
 // ===== FIXED: DELETE TRANSACTION BY ID (WITH CACHE CLEAR) =====
-// Track ongoing operations to prevent duplicates
 window._deletingTransactions = window._deletingTransactions || new Set();
 
 function deleteTransactionById(txId) {
@@ -969,6 +966,9 @@ function deleteTransactionById(txId) {
 
     // Store the transaction for reference
     const deletedTx = window.transactions[index];
+    
+    // EXTRA: Check if this is a savings transaction
+    const isSavings = deletedTx.type === 'savings';
 
     if (confirm(`Delete this ${deletedTx.type} transaction?\n\nCategory: ${deletedTx.category}\nAmount: ${formatCurrency(deletedTx.amount)}\nDate: ${formatDate(deletedTx.date)}`)) {
         window._deletingTransactions.add(txId);
@@ -984,9 +984,27 @@ function deleteTransactionById(txId) {
             }
         }
         
-        // 3. Render immediately (instant feedback)
+        // 3. IMPORTANT: Also remove from recurring transaction history
+        if (window.recurringTransactions) {
+            window.recurringTransactions.forEach((recurring, rIndex) => {
+                if (recurring.paymentHistory) {
+                    const histIndex = recurring.paymentHistory.findIndex(p => p.transactionId === txId);
+                    if (histIndex !== -1) {
+                        recurring.paymentHistory.splice(histIndex, 1);
+                        // Update payment stats
+                        if (typeof updatePaymentStats === 'function') {
+                            updatePaymentStats(rIndex);
+                        }
+                    }
+                }
+            });
+        }
+        
+        // 4. Render immediately (instant feedback)
         render();
-        if (deletedTx.type === 'savings' && typeof updateSavingsGoal === 'function') {
+        
+        // 5. Update savings goal display if needed
+        if (isSavings && typeof updateSavingsGoal === 'function') {
             updateSavingsGoal();
         }
         
@@ -994,46 +1012,28 @@ function deleteTransactionById(txId) {
             window.sileo.success(`${deletedTx.type.charAt(0).toUpperCase() + deletedTx.type.slice(1)} deleted!`, 'Deleted');
         }
         
-        // 4. Clear caches asynchronously (non-blocking)
-        Promise.resolve().then(() => {
-            if (window.currentUser) {
-                const cacheKey = 'cajesData_' + window.currentUser.uid;
-                try {
-                    const cached = localStorage.getItem(cacheKey);
-                    if (cached) {
-                        const data = JSON.parse(cached);
-                        data.transactions = data.transactions.filter(t => t.id !== txId);
-                        localStorage.setItem(cacheKey, JSON.stringify(data));
-                    }
-                } catch (e) {
-                    console.warn('Could not clear cache:', e);
-                }
-            }
-            
-            if (window.UnifiedOfflineManager) {
-                try {
-                    const backup = localStorage.getItem('offline_retry_queue');
-                    if (backup) {
-                        let queue = JSON.parse(backup);
-                        queue = queue.filter(item => item.data?.id !== txId);
-                        localStorage.setItem('offline_retry_queue', JSON.stringify(queue));
-                    }
-                } catch (e) {
-                    console.warn('Could not clear retry queue:', e);
-                }
-            }
-        });
+        // 6. CLEAR ALL CACHES - This is critical!
+        clearAllTransactionCaches(txId);
         
-        // 5. Save to Firebase in background (non-blocking)
+        // 7. Save to Firebase in background with explicit deletion
         if (typeof saveToFirebase === 'function') {
-            saveToFirebase()
+            // Call the enhanced save function
+            saveToFirebaseWithDeletion(txId)
+                .then(() => {
+                    console.log('✅ Deletion synced to Firebase');
+                    window._deletingTransactions.delete(txId);
+                })
                 .catch((error) => {
                     console.warn('Firebase delete failed, restoring:', error);
-                    window.transactions.splice(index, 0, deletedTx);
-                    render();
-                    if (window.sileo) window.sileo.error('Delete failed - restored', 'Error');
-                })
-                .finally(() => {
+                    // Only restore if transaction doesn't exist already
+                    const exists = window.transactions.some(t => t.id === txId);
+                    if (!exists && !window._restoringTransaction) {
+                        window._restoringTransaction = true;
+                        window.transactions.splice(index, 0, deletedTx);
+                        render();
+                        if (window.sileo) window.sileo.error('Delete failed - restored', 'Error');
+                        window._restoringTransaction = false;
+                    }
                     window._deletingTransactions.delete(txId);
                 });
         } else {
@@ -1042,8 +1042,92 @@ function deleteTransactionById(txId) {
     }
 }
 
-// Delete current transaction (for modal)
-// ===== OPTIMIZED: DELETE CURRENT TRANSACTION (MODAL) =====
+// ===== NEW: CLEAR ALL CACHES =====
+function clearAllTransactionCaches(txId) {
+    console.log('🧹 Clearing caches for transaction:', txId);
+    
+    // 1. Track this deletion persistently
+    if (window.currentUser) {
+        const deletedKey = `_deleted_transactions_${window.currentUser.uid}`;
+        try {
+            const deletedIds = JSON.parse(localStorage.getItem(deletedKey) || '[]');
+            if (!deletedIds.includes(txId)) {
+                deletedIds.push(txId);
+                // Keep only last 100 deletions to prevent unlimited growth
+                if (deletedIds.length > 100) {
+                    deletedIds.splice(0, deletedIds.length - 100);
+                }
+                localStorage.setItem(deletedKey, JSON.stringify(deletedIds));
+            }
+        } catch (e) {
+            console.warn('Could not track deletion:', e);
+        }
+    }
+    
+    // 2. Clear localStorage cache
+    // ... rest of existing code ...
+}
+
+// ===== NEW: SAVE TO FIREBASE WITH DELETION =====
+async function saveToFirebaseWithDeletion(txId) {
+    if (!window.currentUser) return false;
+
+    try {
+        const db = window.db;
+        const userId = window.currentUser.uid;
+        
+        // Get current cloud data
+        const doc = await db.collection('users').doc(userId).get();
+        let cloudData = doc.exists ? doc.data() : {};
+        let cloudTransactions = cloudData.transactions || [];
+        
+        // Remove the deleted transaction from cloud
+        const updatedCloudTransactions = cloudTransactions.filter(t => t.id !== txId);
+        
+        // Also remove from retry queue in Firebase if stored
+        // Prepare data to save (with deletion flag)
+        const dataToSave = {
+            transactions: updatedCloudTransactions,
+            monthlyBudget: window.budgetLimit || 0,
+            debtGoal: window.debtGoal || 0,
+            savingsGoal: window.savingsGoal || 0,
+            goals: window.goals || [],
+            bills: window.bills || [],
+            recurringTransactions: window.recurringTransactions || [],
+            lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+            // Add a deletion record to prevent sync conflicts
+            _deletedTransactions: firebase.firestore.FieldValue.arrayUnion(txId)
+        };
+
+        // Save to Firebase
+        await db.collection('users').doc(userId).set(dataToSave, { merge: true });
+        
+        // Update local transactions to match what was saved
+        window.transactions = window.transactions.filter(t => t.id !== txId);
+        
+        // Save to localStorage cache
+        localStorage.setItem('cajesData_' + userId, JSON.stringify({
+            transactions: window.transactions,
+            budgetLimit: window.budgetLimit,
+            debtGoal: window.debtGoal,
+            savingsGoal: window.savingsGoal,
+            goals: window.goals,
+            bills: window.bills,
+            recurringTransactions: window.recurringTransactions
+        }));
+        
+        console.log(`✅ Deletion synced to Firebase. Remaining: ${window.transactions.length} transactions`);
+        
+        if (typeof render === 'function') render();
+        return true;
+        
+    } catch (error) {
+        console.error('Save with deletion error:', error);
+        return false;
+    }
+}
+
+// ===== FIXED: DELETE CURRENT TRANSACTION (MODAL) =====
 function deleteCurrentTransaction() {
     console.log('🗑️ deleteCurrentTransaction called');
     const modal = document.getElementById('modal');
@@ -1062,6 +1146,7 @@ function deleteCurrentTransaction() {
     }
 
     const deletedTx = window.transactions[index];
+    const isSavings = deletedTx.type === 'savings';
 
     if (confirm(`Delete this ${deletedTx.type}?\n\n${deletedTx.category}\n${formatCurrency(deletedTx.amount)}`)) {
         window._deletingTransactions.add(editingId);
@@ -1077,53 +1162,43 @@ function deleteCurrentTransaction() {
             }
         }
         
-        // 3. Close modal and render immediately (instant feedback)
+        // 3. Remove from recurring transaction history
+        if (window.recurringTransactions) {
+            window.recurringTransactions.forEach((recurring, rIndex) => {
+                if (recurring.paymentHistory) {
+                    const histIndex = recurring.paymentHistory.findIndex(p => p.transactionId === editingId);
+                    if (histIndex !== -1) {
+                        recurring.paymentHistory.splice(histIndex, 1);
+                        if (typeof updatePaymentStats === 'function') {
+                            updatePaymentStats(rIndex);
+                        }
+                    }
+                }
+            });
+        }
+        
+        // 4. Close modal and render immediately
         closeModal();
         render();
         window.editIndex = -1;
+        
+        // 5. Update savings goal if needed
+        if (isSavings && typeof updateSavingsGoal === 'function') {
+            updateSavingsGoal();
+        }
         
         if (window.sileo) {
             window.sileo.success(`${deletedTx.type} deleted!`, 'Deleted');
         }
         
-        // 4. Clear caches asynchronously (non-blocking)
-        Promise.resolve().then(() => {
-            if (window.currentUser) {
-                const cacheKey = 'cajesData_' + window.currentUser.uid;
-                try {
-                    const cached = localStorage.getItem(cacheKey);
-                    if (cached) {
-                        const data = JSON.parse(cached);
-                        data.transactions = data.transactions.filter(t => t.id !== editingId);
-                        localStorage.setItem(cacheKey, JSON.stringify(data));
-                    }
-                } catch (e) {
-                    console.warn('Could not clear cache:', e);
-                }
-            }
-            
-            if (window.UnifiedOfflineManager) {
-                try {
-                    const backup = localStorage.getItem('offline_retry_queue');
-                    if (backup) {
-                        let queue = JSON.parse(backup);
-                        queue = queue.filter(item => item.data?.id !== editingId);
-                        localStorage.setItem('offline_retry_queue', JSON.stringify(queue));
-                    }
-                } catch (e) {
-                    console.warn('Could not clear retry queue:', e);
-                }
-            }
-        });
+        // 6. Clear all caches
+        clearAllTransactionCaches(editingId);
         
-        // 5. Save to Firebase in background (non-blocking)
-        if (typeof saveToFirebase === 'function') {
-            saveToFirebase()
+        // 7. Save to Firebase with deletion
+        if (typeof saveToFirebaseWithDeletion === 'function') {
+            saveToFirebaseWithDeletion(editingId)
                 .catch((error) => {
-                    console.warn('Firebase delete failed, restoring:', error);
-                    window.transactions.splice(index, 0, deletedTx);
-                    render();
-                    if (window.sileo) window.sileo.error('Delete failed - restored', 'Error');
+                    console.warn('Firebase delete failed:', error);
                 })
                 .finally(() => {
                     window._deletingTransactions.delete(editingId);
@@ -9730,50 +9805,50 @@ function getPremiumRecurringStatus(recurring) {
         setTimeout(() => renderRecurringTransactions(), 300);
     }
 
-    function processRecurringTransactions() {
-        ensureRecurringState();
-        if (!window.recurringTransactions.length) return;
+    // In the processRecurringTransactions function, add this check
+function processRecurringTransactions() {
+    ensureRecurringState();
+    if (!window.recurringTransactions.length) return;
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayStr = today.toISOString().split('T')[0];
-        const generated = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().split('T')[0];
+    const generated = [];
 
-        window.recurringTransactions.forEach((recurring, index) => {
-            if (!recurring.isActive) return;
-            const lastGenerated = recurring.lastGenerated ? new Date(recurring.lastGenerated) : null;
-            if (lastGenerated) lastGenerated.setHours(0, 0, 0, 0);
-            const nextDueDateValue = recurring.nextDueDate ? new Date(recurring.nextDueDate) : getNextOccurrence(recurring);
-            nextDueDateValue.setHours(0, 0, 0, 0);
-            const shouldGenerate = nextDueDateValue <= today && (!lastGenerated || lastGenerated < nextDueDateValue);
-            if (!shouldGenerate) return;
-
-            const transactionId = `${recurring.id}_${Date.now()}`;
-            const transaction = {
-                id: transactionId,
-                type: recurring.type,
-                category: recurring.category,
-                amount: recurring.amount,
-                date: todayStr,
-                note: `[Auto] ${recurring.name}`,
-                createdAt: new Date().toISOString(),
-                recurringId: recurring.id
-            };
-
-            generated.push(transaction);
-            window.transactions.unshift(transaction);
-            window.recurringTransactions[index].lastGenerated = todayStr;
-            window.recurringTransactions[index].nextDueDate = calculateNextDueDate(recurring, nextDueDateValue).toISOString().split('T')[0];
-            trackPaymentTiming(recurring.id, transactionId, todayStr, nextDueDateValue.toISOString().split('T')[0]);
-        });
-
-        if (generated.length) {
-            if (typeof render === 'function') render();
-            renderRecurringTransactions();
-            if (typeof saveToFirebase === 'function') saveToFirebase();
-            console.log(`✅ Auto-generated ${generated.length} recurring transactions`);
+    window.recurringTransactions.forEach((recurring, index) => {
+        if (!recurring.isActive) return;
+        
+        // ===== NEW: Check if this recurring transaction was already generated today =====
+        const lastGenerated = recurring.lastGenerated ? new Date(recurring.lastGenerated) : null;
+        if (lastGenerated) {
+            const lastGenStr = lastGenerated.toISOString().split('T')[0];
+            if (lastGenStr === todayStr) {
+                console.log(`⏭️ Skipping ${recurring.name} - already generated today`);
+                return;
+            }
         }
-    }
+        
+        const nextDueDateValue = recurring.nextDueDate ? new Date(recurring.nextDueDate) : getNextOccurrence(recurring);
+        nextDueDateValue.setHours(0, 0, 0, 0);
+        
+        // ===== NEW: Check if this exact transaction already exists (prevents duplicates) =====
+        const existingTransaction = window.transactions.some(t => 
+            t.recurringId === recurring.id && 
+            t.date === todayStr &&
+            t.note && t.note.includes('[Auto]')
+        );
+        
+        if (existingTransaction) {
+            console.log(`⏭️ Skipping ${recurring.name} - transaction already exists for today`);
+            return;
+        }
+        
+        const shouldGenerate = nextDueDateValue <= today && (!lastGenerated || lastGenerated < nextDueDateValue);
+        if (!shouldGenerate) return;
+
+        // ... rest of generation code ...
+    });
+}
 
     function trackPaymentTiming(recurringId, transactionId, actualDate, dueDate) {
         if (!actualDate || !dueDate) return;
@@ -10740,6 +10815,25 @@ function clearOcrResults() {
         placeholder.style.display = 'flex';
     }
     document.getElementById('video').style.display = 'none';
+}
+
+
+// In loadUserData, add this after merging transactions
+
+// ===== NEW: Prevent deleted transactions from coming back =====
+if (window.currentUser) {
+    const deletedKey = `_deleted_transactions_${window.currentUser.uid}`;
+    const deletedIds = JSON.parse(localStorage.getItem(deletedKey) || '[]');
+    
+    // Filter out any transactions that were marked as deleted
+    if (deletedIds.length > 0) {
+        const beforeCount = window.transactions.length;
+        window.transactions = window.transactions.filter(t => !deletedIds.includes(t.id));
+        const afterCount = window.transactions.length;
+        if (beforeCount !== afterCount) {
+            console.log(`🗑️ Filtered out ${beforeCount - afterCount} deleted transactions on load`);
+        }
+    }
 }
 
 // Export functions
