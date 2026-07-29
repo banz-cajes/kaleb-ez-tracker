@@ -10402,3 +10402,182 @@ body {
         height: 12px;
     }
 }
+
+/* ===== RECURRING ALERTS PANEL - IMPROVED ===== */
+
+/* Modal content for alerts */
+#recurringAlertsModal .modal-content {
+    max-width: 420px;
+    padding: 24px;
+}
+
+/* Notification status row */
+.notif-status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.notif-status-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.notif-status-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 30px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.notif-status-badge.enabled {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+}
+
+.notif-status-badge.disabled {
+    background: rgba(107, 114, 128, 0.12);
+    color: #6b7280;
+}
+
+.notif-status-badge.blocked {
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+}
+
+/* Enable button - subtle style */
+.btn-enable-notif {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: white;
+    border: none;
+    border-radius: 30px;
+    padding: 6px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-enable-notif:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.btn-enable-notif:active {
+    transform: scale(0.98);
+}
+
+/* Upcoming transaction items */
+.upcoming-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.upcoming-item:last-child {
+    border-bottom: none;
+}
+
+.upcoming-item .info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.upcoming-item .info .name {
+    font-weight: 600;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px;
+}
+
+.upcoming-item .info .details {
+    font-size: 11px;
+    color: var(--gray-500);
+}
+
+.upcoming-item .status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.upcoming-item .status .badge {
+    font-weight: 600;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.upcoming-item .status .badge.urgent {
+    color: #ef4444;
+}
+
+.upcoming-item .status .badge.warning {
+    color: #f59e0b;
+}
+
+.upcoming-item .status .badge.info {
+    color: #8b5cf6;
+}
+
+.upcoming-item .status .badge.ok {
+    color: #10b981;
+}
+
+/* No upcoming state */
+.no-upcoming {
+    text-align: center;
+    color: var(--gray-500);
+    padding: 20px 0;
+}
+
+.no-upcoming i {
+    color: #10b981;
+    font-size: 24px;
+    display: block;
+    margin-bottom: 8px;
+}
+
+/* Count badge */
+.upcoming-count {
+    margin-left: auto;
+    background: var(--primary);
+    color: white;
+    padding: 2px 10px;
+    border-radius: 30px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+    .upcoming-item {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    
+    .upcoming-item .info .name {
+        max-width: 100px;
+    }
+    
+    .upcoming-count {
+        font-size: 10px;
+        padding: 1px 8px;
+    }
+}
