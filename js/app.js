@@ -7869,7 +7869,6 @@ const RecurringNotifier = {
     },
     
     // Check recurring transactions and show notifications
-    // Check recurring transactions and show notifications
 checkAndNotify() {
     if (!window.recurringTransactions || window.recurringTransactions.length === 0) return;
     
@@ -7891,8 +7890,11 @@ checkAndNotify() {
         // Get last notified from storage
         const lastNotified = localStorage.getItem(`notified_${recurring.id}`) || '';
         
-        // Due today
-        if (nextDateStr === todayStr && lastNotified !== todayStr) {
+        // LOG FOR DEBUGGING
+        console.log(`📅 ${recurring.name}: daysUntil=${daysUntil}, nextDate=${nextDateStr}, today=${todayStr}`);
+        
+        // Due today (daysUntil === 0)
+        if (daysUntil === 0 && lastNotified !== todayStr) {
             dueToday.push(recurring);
             notifications.push({
                 title: '⏰ Due Today!',
@@ -7924,6 +7926,17 @@ checkAndNotify() {
             });
             localStorage.setItem(`notified_${recurring.id}`, `3day_${todayStr}`);
         }
+        // Also show if overdue (daysUntil < 0)
+        else if (daysUntil < 0 && lastNotified !== `overdue_${todayStr}`) {
+            dueToday.push(recurring);
+            notifications.push({
+                title: '🔴 Overdue!',
+                body: `${recurring.name} - ${formatCurrency(recurring.amount)} is ${Math.abs(daysUntil)} days overdue`,
+                type: 'error',
+                recurring: recurring
+            });
+            localStorage.setItem(`notified_${recurring.id}`, `overdue_${todayStr}`);
+        }
     });
     
     // Show notifications
@@ -7945,61 +7958,129 @@ checkAndNotify() {
 },
     
     // Get days until next occurrence
+    // ===== FIXED: Get days until next occurrence =====
     getDaysUntil(recurring) {
-        const nextDate = this.getNextDate(recurring);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        nextDate.setHours(0, 0, 0, 0);
-        
-        const diffTime = nextDate - today;
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        return diffDays;
+    const nextDate = this.getNextDate(recurring);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    nextDate.setHours(0, 0, 0, 0);
+    
+    const diffTime = nextDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
     },
     
     // Get next occurrence date
-    getNextDate(recurring) {
-        const today = new Date();
-        const currentYear = today.getFullYear();
-        const currentMonth = today.getMonth();
-        const currentDay = today.getDate();
-        
-        let nextDate = new Date();
-        
-        switch (recurring.frequency) {
-            case 'daily':
-                const lastGen = recurring.lastGenerated ? new Date(recurring.lastGenerated) : null;
-                if (lastGen && lastGen.toDateString() === today.toDateString()) {
+    // ===== FIXED: Get next occurrence date =====
+getNextDate(recurring) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth();
+    const currentDay = today.getDate();
+    const targetDay = parseInt(recurring.dayOfMonth) || 1;
+    
+    let nextDate = new Date(today);
+    nextDate.setHours(0, 0, 0, 0);
+    
+    switch (recurring.frequency) {
+        case 'daily': {
+            const lastGen = recurring.lastGenerated ? new Date(recurring.lastGenerated) : null;
+            if (lastGen) {
+                lastGen.setHours(0, 0, 0, 0);
+                // If last generated today, next is tomorrow
+                if (lastGen.getTime() === today.getTime()) {
                     nextDate.setDate(today.getDate() + 1);
                 } else {
-                    nextDate = today;
+                    // Otherwise, check if we need to generate today
+                    const daysSinceLast = Math.floor((today - lastGen) / (1000 * 60 * 60 * 24));
+                    if (daysSinceLast >= 1) {
+                        nextDate = new Date(today);
+                    } else {
+                        nextDate.setDate(today.getDate() + 1);
+                    }
                 }
-                break;
-            case 'weekly':
-                nextDate.setDate(today.getDate() + (7 - today.getDay() + 1) % 7);
-                if (nextDate < today) nextDate.setDate(nextDate.getDate() + 7);
-                break;
-            case 'monthly':
-                const targetDay = recurring.dayOfMonth || 1;
-                nextDate = new Date(currentYear, currentMonth, targetDay);
-                if (nextDate < today) {
-                    nextDate = new Date(currentYear, currentMonth + 1, targetDay);
-                }
-                if (nextDate.getDate() !== targetDay) {
-                    nextDate = new Date(currentYear, currentMonth + 1, 0);
-                }
-                break;
-            case 'yearly':
-                const targetDayYear = recurring.dayOfMonth || 1;
-                const createdMonth = recurring.createdAt ? new Date(recurring.createdAt).getMonth() : 0;
-                nextDate = new Date(currentYear, createdMonth, targetDayYear);
-                if (nextDate < today) {
-                    nextDate = new Date(currentYear + 1, createdMonth, targetDayYear);
-                }
-                break;
+            } else {
+                nextDate.setDate(today.getDate() + 1);
+            }
+            break;
         }
         
-        return nextDate;
-    },
+        case 'weekly': {
+            // Calculate days until next specified day (Monday = 1, Sunday = 7)
+            // Default to today if not specified
+            nextDate.setDate(today.getDate() + (7 - today.getDay() + 1) % 7);
+            // If today is the day, keep today
+            if (today.getDay() === 1) {
+                nextDate = new Date(today);
+            }
+            break;
+        }
+        
+        case 'monthly': {
+            // Create date for this month's target day
+            let candidateDate = new Date(currentYear, currentMonth, targetDay);
+            candidateDate.setHours(0, 0, 0, 0);
+            
+            // If candidate date is today, return today
+            if (candidateDate.getTime() === today.getTime()) {
+                nextDate = candidateDate;
+            }
+            // If candidate date is in the past, go to next month
+            else if (candidateDate < today) {
+                // Try next month
+                let nextMonth = currentMonth + 1;
+                let nextYear = currentYear;
+                if (nextMonth > 11) {
+                    nextMonth = 0;
+                    nextYear++;
+                }
+                candidateDate = new Date(nextYear, nextMonth, targetDay);
+                candidateDate.setHours(0, 0, 0, 0);
+                
+                // Handle invalid dates (Feb 31, etc.)
+                if (candidateDate.getDate() !== targetDay) {
+                    candidateDate = new Date(nextYear, nextMonth + 1, 0);
+                    candidateDate.setHours(0, 0, 0, 0);
+                }
+                nextDate = candidateDate;
+            } else {
+                // Candidate date is in the future
+                nextDate = candidateDate;
+            }
+            break;
+        }
+        
+        case 'yearly': {
+            const targetMonth = recurring.createdAt ? new Date(recurring.createdAt).getMonth() : 0;
+            let candidateDate = new Date(currentYear, targetMonth, targetDay);
+            candidateDate.setHours(0, 0, 0, 0);
+            
+            if (candidateDate < today) {
+                candidateDate = new Date(currentYear + 1, targetMonth, targetDay);
+                candidateDate.setHours(0, 0, 0, 0);
+            }
+            if (candidateDate.getDate() !== targetDay) {
+                candidateDate = new Date(candidateDate.getFullYear(), candidateDate.getMonth() + 1, 0);
+                candidateDate.setHours(0, 0, 0, 0);
+            }
+            nextDate = candidateDate;
+            break;
+        }
+        
+        default:
+            nextDate.setDate(today.getDate() + 1);
+    }
+    
+    // Ensure nextDate is not before today
+    if (nextDate < today) {
+        nextDate = new Date(today);
+        nextDate.setDate(today.getDate() + 1);
+    }
+    
+    return nextDate;
+},
     
     // Add notification bell to UI
     addNotificationBell() {
@@ -8126,6 +8207,7 @@ showPanel() {
 },
     
     // Update status list in panel - Improved version
+// ===== FIXED: Update status list in panel =====
 updateStatusList() {
     const container = document.getElementById('recurringStatusList');
     const noUpcoming = document.getElementById('noUpcoming');
@@ -8134,20 +8216,25 @@ updateStatusList() {
     if (!container || !window.recurringTransactions) return;
     
     const upcoming = [];
+    const overdue = [];
+    
     window.recurringTransactions.forEach(recurring => {
         if (!recurring.isActive) return;
         const days = this.getDaysUntil(recurring);
-        if (days <= 7 && days >= 0) {
+        
+        if (days < 0) {
+            overdue.push({ ...recurring, days });
+        } else if (days <= 7) {
             upcoming.push({ ...recurring, days });
         }
     });
     
-    // Update count badge
+    // Update count badge (only upcoming, not overdue)
     if (countBadge) {
-        countBadge.textContent = upcoming.length;
+        countBadge.textContent = upcoming.length + overdue.length;
     }
     
-    if (upcoming.length === 0) {
+    if (upcoming.length === 0 && overdue.length === 0) {
         container.innerHTML = '';
         if (noUpcoming) noUpcoming.style.display = 'block';
         return;
@@ -8155,21 +8242,27 @@ updateStatusList() {
     
     if (noUpcoming) noUpcoming.style.display = 'none';
     
-    upcoming.sort((a, b) => a.days - b.days);
+    // Sort: overdue first, then by days ascending
+    const allItems = [...overdue, ...upcoming];
+    allItems.sort((a, b) => a.days - b.days);
     
-    container.innerHTML = upcoming.map(r => {
+    container.innerHTML = allItems.map(r => {
         let statusColor = '#10b981';
         let statusIcon = '✅';
         let statusLabel = 'On track';
         
-        if (r.days === 0) {
+        if (r.days < 0) {
+            statusColor = '#ef4444';
+            statusIcon = '🔴';
+            statusLabel = `${Math.abs(r.days)} day${Math.abs(r.days) !== 1 ? 's' : ''} overdue`;
+        } else if (r.days === 0) {
             statusColor = '#ef4444';
             statusIcon = '🔴';
             statusLabel = 'Due today!';
         } else if (r.days <= 2) {
             statusColor = '#f59e0b';
             statusIcon = '⚠️';
-            statusLabel = 'Soon';
+            statusLabel = `${r.days} day${r.days !== 1 ? 's' : ''} left`;
         } else if (r.days <= 4) {
             statusColor = '#8b5cf6';
             statusIcon = '📅';
@@ -8181,7 +8274,6 @@ updateStatusList() {
         
         // Get type icon
         const typeIcon = r.type === 'expense' ? '💸' : r.type === 'income' ? '💰' : '🏦';
-        const typeColor = r.type === 'expense' ? '#ef4444' : r.type === 'income' ? '#10b981' : '#3b82f6';
         
         return `
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--gray-200);">
