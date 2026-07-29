@@ -1042,7 +1042,7 @@ function deleteTransactionById(txId) {
     }
 }
 
-// ===== NEW: CLEAR ALL CACHES =====
+// ===== FIXED: CLEAR ALL CACHES =====
 function clearAllTransactionCaches(txId) {
     console.log('🧹 Clearing caches for transaction:', txId);
     
@@ -1058,17 +1058,113 @@ function clearAllTransactionCaches(txId) {
                     deletedIds.splice(0, deletedIds.length - 100);
                 }
                 localStorage.setItem(deletedKey, JSON.stringify(deletedIds));
+                console.log('✅ Tracked deletion:', txId);
             }
         } catch (e) {
             console.warn('Could not track deletion:', e);
         }
     }
     
-    // 2. Clear localStorage cache
-    // ... rest of existing code ...
+    // 2. Clear cajesData cache
+    if (window.currentUser) {
+        const cacheKey = 'cajesData_' + window.currentUser.uid;
+        try {
+            const cached = localStorage.getItem(cacheKey);
+            if (cached) {
+                const data = JSON.parse(cached);
+                if (data.transactions) {
+                    const before = data.transactions.length;
+                    data.transactions = data.transactions.filter(t => t.id !== txId);
+                    const after = data.transactions.length;
+                    if (before !== after) {
+                        localStorage.setItem(cacheKey, JSON.stringify(data));
+                        console.log(`✅ Removed from cajesData cache (${before} → ${after})`);
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('Could not clear cajesData cache:', e);
+        }
+    }
+    
+    // 3. Clear offline retry queue
+    try {
+        const backup = localStorage.getItem('offline_retry_queue');
+        if (backup) {
+            let queue = JSON.parse(backup);
+            const before = queue.length;
+            queue = queue.filter(item => item.data?.id !== txId);
+            if (queue.length !== before) {
+                localStorage.setItem('offline_retry_queue', JSON.stringify(queue));
+                console.log(`✅ Removed from retry queue (${before} → ${queue.length})`);
+            }
+        }
+    } catch (e) {
+        console.warn('Could not clear retry queue:', e);
+    }
+    
+    // 4. Clear Unified Offline Manager backup
+    try {
+        if (window.currentUser) {
+            const backupKey = `kaleb_backup_${window.currentUser.uid}`;
+            const backup = localStorage.getItem(backupKey);
+            if (backup) {
+                const data = JSON.parse(backup);
+                if (data.transactions) {
+                    const before = data.transactions.length;
+                    data.transactions = data.transactions.filter(t => t.id !== txId);
+                    if (data.transactions.length !== before) {
+                        localStorage.setItem(backupKey, JSON.stringify(data));
+                        console.log(`✅ Removed from kaleb_backup (${before} → ${data.transactions.length})`);
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('Could not clear unified backup:', e);
+    }
+    
+    // 5. Clear any archived transactions
+    try {
+        const archived = localStorage.getItem('archived_transactions');
+        if (archived) {
+            let data = JSON.parse(archived);
+            if (Array.isArray(data)) {
+                const before = data.length;
+                data = data.filter(t => t.id !== txId);
+                if (data.length !== before) {
+                    localStorage.setItem('archived_transactions', JSON.stringify(data));
+                    console.log(`✅ Removed from archived (${before} → ${data.length})`);
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('Could not clear archived:', e);
+    }
+    
+    // 6. Clear any pending_sync flag
+    try {
+        if (localStorage.getItem('pending_sync') === 'true') {
+            // Check if there are any pending items left
+            const queue = localStorage.getItem('offline_retry_queue');
+            if (queue) {
+                const items = JSON.parse(queue);
+                if (items.length === 0) {
+                    localStorage.removeItem('pending_sync');
+                    console.log('✅ Cleared pending_sync flag');
+                }
+            } else {
+                localStorage.removeItem('pending_sync');
+            }
+        }
+    } catch (e) {
+        console.warn('Could not clear pending_sync:', e);
+    }
+    
+    console.log('🧹 Cache clearing complete for:', txId);
 }
 
-// ===== NEW: SAVE TO FIREBASE WITH DELETION =====
+// ===== FIXED: SAVE TO FIREBASE WITH DELETION =====
 async function saveToFirebaseWithDeletion(txId) {
     if (!window.currentUser) return false;
 
@@ -1084,8 +1180,40 @@ async function saveToFirebaseWithDeletion(txId) {
         // Remove the deleted transaction from cloud
         const updatedCloudTransactions = cloudTransactions.filter(t => t.id !== txId);
         
-        // Also remove from retry queue in Firebase if stored
-        // Prepare data to save (with deletion flag)
+        // Also remove from any recurring transaction payment histories
+        let recurrings = cloudData.recurringTransactions || [];
+        let recurringUpdated = false;
+        recurrings.forEach((recurring, index) => {
+            if (recurring.paymentHistory) {
+                const histBefore = recurring.paymentHistory.length;
+                recurring.paymentHistory = recurring.paymentHistory.filter(p => p.transactionId !== txId);
+                if (recurring.paymentHistory.length !== histBefore) {
+                    recurringUpdated = true;
+                    // Update payment stats
+                    if (recurring.paymentStats) {
+                        const payments = recurring.paymentHistory;
+                        const earlyPayments = payments.filter(p => p.timing === 'early');
+                        const latePayments = payments.filter(p => p.timing === 'late');
+                        const onTimePayments = payments.filter(p => p.timing === 'on-time');
+                        
+                        recurring.paymentStats = {
+                            earlyCount: earlyPayments.length,
+                            lateCount: latePayments.length,
+                            onTimeCount: onTimePayments.length,
+                            totalPayments: payments.length,
+                            earlyPercentage: payments.length > 0 ? (earlyPayments.length / payments.length) * 100 : 0,
+                            latePercentage: payments.length > 0 ? (latePayments.length / payments.length) * 100 : 0,
+                            onTimePercentage: payments.length > 0 ? (onTimePayments.length / payments.length) * 100 : 0,
+                            avgDaysEarly: earlyPayments.length > 0 ? Math.round(earlyPayments.reduce((sum, p) => sum + p.daysDiff, 0) / earlyPayments.length * 10) / 10 : 0,
+                            avgDaysLate: latePayments.length > 0 ? Math.round(latePayments.reduce((sum, p) => sum + p.daysDiff, 0) / latePayments.length * 10) / 10 : 0,
+                            lastPaymentTiming: payments[payments.length - 1]?.timing || null
+                        };
+                    }
+                }
+            }
+        });
+        
+        // Prepare data to save
         const dataToSave = {
             transactions: updatedCloudTransactions,
             monthlyBudget: window.budgetLimit || 0,
@@ -1093,11 +1221,16 @@ async function saveToFirebaseWithDeletion(txId) {
             savingsGoal: window.savingsGoal || 0,
             goals: window.goals || [],
             bills: window.bills || [],
-            recurringTransactions: window.recurringTransactions || [],
             lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
-            // Add a deletion record to prevent sync conflicts
             _deletedTransactions: firebase.firestore.FieldValue.arrayUnion(txId)
         };
+        
+        // Only update recurrings if they were modified
+        if (recurringUpdated) {
+            dataToSave.recurringTransactions = recurrings;
+        } else {
+            dataToSave.recurringTransactions = window.recurringTransactions || [];
+        }
 
         // Save to Firebase
         await db.collection('users').doc(userId).set(dataToSave, { merge: true });
@@ -7736,64 +7869,80 @@ const RecurringNotifier = {
     },
     
     // Check recurring transactions and show notifications
-    checkAndNotify() {
-        if (!window.recurringTransactions || window.recurringTransactions.length === 0) return;
+    // Check recurring transactions and show notifications
+checkAndNotify() {
+    if (!window.recurringTransactions || window.recurringTransactions.length === 0) return;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().split('T')[0];
+    
+    let notifications = [];
+    let dueToday = [];
+    let upcoming = [];
+    
+    window.recurringTransactions.forEach(recurring => {
+        if (!recurring.isActive) return;
         
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayStr = today.toISOString().split('T')[0];
+        const daysUntil = this.getDaysUntil(recurring);
+        const nextDate = this.getNextDate(recurring);
+        const nextDateStr = nextDate.toISOString().split('T')[0];
         
-        let notifications = [];
+        // Get last notified from storage
+        const lastNotified = localStorage.getItem(`notified_${recurring.id}`) || '';
         
-        window.recurringTransactions.forEach(recurring => {
-            if (!recurring.isActive) return;
-            
-            const daysUntil = this.getDaysUntil(recurring);
-            const nextDate = this.getNextDate(recurring);
-            const nextDateStr = nextDate.toISOString().split('T')[0];
-            
-            // Get last notified from storage
-            const lastNotified = localStorage.getItem(`notified_${recurring.id}`) || '';
-            
-            // Due today
-            if (nextDateStr === todayStr && lastNotified !== todayStr) {
-                notifications.push({
-                    title: '⏰ Recurring Transaction Due Today',
-                    body: `${recurring.name} - ${formatCurrency(recurring.amount)}`,
-                    type: 'warning'
-                });
-                localStorage.setItem(`notified_${recurring.id}`, todayStr);
-            }
-            
-            // 1 day left
-            else if (daysUntil === 1 && lastNotified !== `1day_${todayStr}`) {
-                notifications.push({
-                    title: '📅 Transaction Tomorrow',
-                    body: `${recurring.name} - ${formatCurrency(recurring.amount)} is due tomorrow`,
-                    type: 'info'
-                });
-                localStorage.setItem(`notified_${recurring.id}`, `1day_${todayStr}`);
-            }
-            
-            // 3 days left
-            else if (daysUntil === 3 && lastNotified !== `3day_${todayStr}`) {
-                notifications.push({
-                    title: '📅 Upcoming Transaction',
-                    body: `${recurring.name} - ${formatCurrency(recurring.amount)} is due in 3 days`,
-                    type: 'info'
-                });
-                localStorage.setItem(`notified_${recurring.id}`, `3day_${todayStr}`);
-            }
-        });
-        
-        // Show notifications
-        notifications.forEach(notif => {
-            this.show(notif.body, notif.type);
-            this.sendBrowserNotification(notif.title, notif.body);
-        });
-        
-        return notifications.length;
-    },
+        // Due today
+        if (nextDateStr === todayStr && lastNotified !== todayStr) {
+            dueToday.push(recurring);
+            notifications.push({
+                title: '⏰ Due Today!',
+                body: `${recurring.name} - ${formatCurrency(recurring.amount)} is due today`,
+                type: 'warning',
+                recurring: recurring
+            });
+            localStorage.setItem(`notified_${recurring.id}`, todayStr);
+        }
+        // 1 day left
+        else if (daysUntil === 1 && lastNotified !== `1day_${todayStr}`) {
+            upcoming.push(recurring);
+            notifications.push({
+                title: '📅 Due Tomorrow',
+                body: `${recurring.name} - ${formatCurrency(recurring.amount)} is due tomorrow`,
+                type: 'info',
+                recurring: recurring
+            });
+            localStorage.setItem(`notified_${recurring.id}`, `1day_${todayStr}`);
+        }
+        // 3 days left
+        else if (daysUntil === 3 && lastNotified !== `3day_${todayStr}`) {
+            upcoming.push(recurring);
+            notifications.push({
+                title: '📅 Upcoming',
+                body: `${recurring.name} - ${formatCurrency(recurring.amount)} is due in 3 days`,
+                type: 'info',
+                recurring: recurring
+            });
+            localStorage.setItem(`notified_${recurring.id}`, `3day_${todayStr}`);
+        }
+    });
+    
+    // Show notifications
+    notifications.forEach(notif => {
+        this.show(notif.body, notif.type);
+        this.sendBrowserNotification(notif.title, notif.body);
+    });
+    
+    // Also show a summary notification if multiple due today
+    if (dueToday.length > 1) {
+        const totalAmount = dueToday.reduce((sum, r) => sum + r.amount, 0);
+        this.show(
+            `💳 ${dueToday.length} transactions due today totaling ${formatCurrency(totalAmount)}`,
+            'warning'
+        );
+    }
+    
+    return notifications.length;
+},
     
     // Get days until next occurrence
     getDaysUntil(recurring) {
@@ -7893,99 +8042,186 @@ const RecurringNotifier = {
     },
     
     // Show notification settings panel
-    showPanel() {
-        const modal = document.createElement('div');
-        modal.className = 'modal';
-        modal.style.display = 'flex';
-        modal.style.zIndex = '10001';
-        modal.innerHTML = `
-            <div class="modal-content" style="max-width: 380px;">
-                <button class="modal-close" onclick="this.closest('.modal').remove()">
-                    <i class="fas fa-times"></i>
-                </button>
-                <h2><i class="fas fa-bell"></i> Recurring Alerts</h2>
-                
-                <div style="margin: 20px 0;">
-                    <div style="background: var(--gray-100); border-radius: 16px; padding: 16px; margin-bottom: 16px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                            <span><i class="fas fa-globe"></i> Browser Notifications</span>
-                            <button id="enableBrowserNotifBtn" class="btn-secondary" style="padding: 6px 12px; font-size: 12px;">
-                                <i class="fas fa-bell"></i> Enable
-                            </button>
-                        </div>
-                        <div style="font-size: 12px; color: var(--gray-500);">
-                            Get notifications even when app is closed
-                        </div>
+    // In RecurringNotifier object - Updated showPanel()
+showPanel() {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'flex';
+    modal.style.zIndex = '10001';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 400px;">
+            <button class="modal-close" onclick="this.closest('.modal').remove()">
+                <i class="fas fa-times"></i>
+            </button>
+            <h2 style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+                <i class="fas fa-bell" style="color: var(--primary);"></i>
+                Recurring Alerts
+            </h2>
+            
+            <!-- Browser Notifications Status -->
+            <div style="background: var(--gray-100); border-radius: 16px; padding: 16px; margin-bottom: 16px; border: 1px solid var(--gray-200);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <i class="fas fa-globe" style="color: var(--primary); font-size: 18px;"></i>
+                        <span style="font-weight: 600; font-size: 14px;">Browser Notifications</span>
                     </div>
-                    
-                    <div style="background: var(--gray-100); border-radius: 16px; padding: 16px;">
-                        <div style="font-weight: 600; margin-bottom: 12px;">
-                            <i class="fas fa-info-circle"></i> Current Status
-                        </div>
-                        <div id="recurringStatusList" style="font-size: 13px;"></div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span id="notifStatusText" style="font-size: 12px; font-weight: 600; color: ${Notification.permission === 'granted' ? '#10b981' : '#6b7280'};">
+                            ${Notification.permission === 'granted' ? '✅ Enabled' : Notification.permission === 'denied' ? '❌ Blocked' : '⏳ Not Set'}
+                        </span>
+                        ${Notification.permission !== 'granted' ? `
+                        <button id="enableBrowserNotifBtn" class="btn-primary" style="padding: 6px 16px; font-size: 12px; min-width: auto; border-radius: 30px;">
+                            <i class="fas fa-bell"></i> Enable
+                        </button>
+                        ` : `
+                        <span style="background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 4px 12px; border-radius: 30px; font-size: 12px; font-weight: 600;">
+                            <i class="fas fa-check-circle"></i> Active
+                        </span>
+                        `}
                     </div>
                 </div>
-                
-                <button class="btn-primary" onclick="RecurringNotifier.testAlert()" style="width: 100%;">
-                    <i class="fas fa-flask"></i> Test Notification
-                </button>
+                <div style="font-size: 12px; color: var(--gray-500);">
+                    ${Notification.permission === 'granted' ? '🔔 You will receive alerts even when the app is closed.' : 'Enable to get notifications even when the app is closed.'}
+                </div>
             </div>
-        `;
-        
-        document.body.appendChild(modal);
-        document.body.classList.add('modal-open');
-        
-        // Enable browser notification button
-        document.getElementById('enableBrowserNotifBtn').onclick = () => {
-            this.requestBrowserPermission();
-        };
-        
-        // Show status list
-        this.updateStatusList();
-    },
+            
+            <!-- Current Status -->
+            <div style="background: var(--gray-100); border-radius: 16px; padding: 16px; border: 1px solid var(--gray-200);">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                    <i class="fas fa-info-circle" style="color: var(--primary); font-size: 16px;"></i>
+                    <span style="font-weight: 600; font-size: 14px;">Upcoming Transactions</span>
+                    <span id="upcomingCount" style="margin-left: auto; background: var(--primary); color: white; padding: 2px 10px; border-radius: 30px; font-size: 11px; font-weight: 600;"></span>
+                </div>
+                <div id="recurringStatusList" style="font-size: 13px; max-height: 200px; overflow-y: auto;"></div>
+                <div id="noUpcoming" style="text-align: center; color: var(--gray-500); padding: 20px 0; display: none;">
+                    <i class="fas fa-check-circle" style="color: #10b981; font-size: 24px; display: block; margin-bottom: 8px;"></i>
+                    All caught up! No upcoming transactions.
+                </div>
+            </div>
+        </div>
+    `;
     
-    // Update status list in panel
-    updateStatusList() {
-        const container = document.getElementById('recurringStatusList');
-        if (!container || !window.recurringTransactions) return;
-        
-        const upcoming = [];
-        window.recurringTransactions.forEach(recurring => {
-            if (!recurring.isActive) return;
-            const days = this.getDaysUntil(recurring);
-            if (days <= 7 && days >= 0) {
-                upcoming.push({ ...recurring, days });
+    document.body.appendChild(modal);
+    document.body.classList.add('modal-open');
+    
+    // Enable browser notification button (only if it exists)
+    const enableBtn = document.getElementById('enableBrowserNotifBtn');
+    if (enableBtn) {
+        enableBtn.onclick = async () => {
+            const granted = await this.requestBrowserPermission();
+            if (granted) {
+                // Close and re-open to refresh UI
+                modal.remove();
+                document.body.classList.remove('modal-open');
+                setTimeout(() => this.showPanel(), 300);
             }
-        });
+        };
+    }
+    
+    // Show status list
+    this.updateStatusList();
+    
+    // Update count
+    this.updateUpcomingCount();
+},
+    
+    // Update status list in panel - Improved version
+updateStatusList() {
+    const container = document.getElementById('recurringStatusList');
+    const noUpcoming = document.getElementById('noUpcoming');
+    const countBadge = document.getElementById('upcomingCount');
+    
+    if (!container || !window.recurringTransactions) return;
+    
+    const upcoming = [];
+    window.recurringTransactions.forEach(recurring => {
+        if (!recurring.isActive) return;
+        const days = this.getDaysUntil(recurring);
+        if (days <= 7 && days >= 0) {
+            upcoming.push({ ...recurring, days });
+        }
+    });
+    
+    // Update count badge
+    if (countBadge) {
+        countBadge.textContent = upcoming.length;
+    }
+    
+    if (upcoming.length === 0) {
+        container.innerHTML = '';
+        if (noUpcoming) noUpcoming.style.display = 'block';
+        return;
+    }
+    
+    if (noUpcoming) noUpcoming.style.display = 'none';
+    
+    upcoming.sort((a, b) => a.days - b.days);
+    
+    container.innerHTML = upcoming.map(r => {
+        let statusColor = '#10b981';
+        let statusIcon = '✅';
+        let statusLabel = 'On track';
         
-        if (upcoming.length === 0) {
-            container.innerHTML = '<div style="text-align: center; color: var(--gray-500);">No upcoming recurring transactions</div>';
-            return;
+        if (r.days === 0) {
+            statusColor = '#ef4444';
+            statusIcon = '🔴';
+            statusLabel = 'Due today!';
+        } else if (r.days <= 2) {
+            statusColor = '#f59e0b';
+            statusIcon = '⚠️';
+            statusLabel = 'Soon';
+        } else if (r.days <= 4) {
+            statusColor = '#8b5cf6';
+            statusIcon = '📅';
+            statusLabel = `${r.days} days`;
+        } else {
+            statusIcon = '📆';
+            statusLabel = `${r.days} days`;
         }
         
-        upcoming.sort((a, b) => a.days - b.days);
+        // Get type icon
+        const typeIcon = r.type === 'expense' ? '💸' : r.type === 'income' ? '💰' : '🏦';
+        const typeColor = r.type === 'expense' ? '#ef4444' : r.type === 'income' ? '#10b981' : '#3b82f6';
         
-        container.innerHTML = upcoming.map(r => {
-            let statusColor = '#10b981';
-            if (r.days === 0) statusColor = '#f59e0b';
-            if (r.days < 0) statusColor = '#ef4444';
-            
-            return `
-                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--gray-200);">
-                    <span>${escapeHtml(r.name)}</span>
-                    <span style="color: ${statusColor}; font-weight: 600;">
-                        ${r.days === 0 ? 'Due today' : `${r.days} day${r.days !== 1 ? 's' : ''} left`}
+        return `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--gray-200);">
+                <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+                    <span style="font-size: 16px;">${typeIcon}</span>
+                    <div style="min-width: 0;">
+                        <div style="font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px;">
+                            ${escapeHtml(r.name)}
+                        </div>
+                        <div style="font-size: 11px; color: var(--gray-500);">
+                            ${formatCurrency(r.amount)} · ${r.frequency}
+                        </div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                    <span style="color: ${statusColor}; font-weight: 600; font-size: 12px; white-space: nowrap;">
+                        ${statusIcon} ${statusLabel}
                     </span>
                 </div>
-            `;
-        }).join('');
-    },
+            </div>
+        `;
+    }).join('');
+},
     
-    // Test alert
-    testAlert() {
-        this.show("🔔 Test notification! Your recurring alerts are working.", 'success');
-        this.sendBrowserNotification("Kaleb Tracker Test", "Notifications are working!");
-    },
+// Update upcoming count badge
+updateUpcomingCount() {
+    const countBadge = document.getElementById('upcomingCount');
+    if (!countBadge || !window.recurringTransactions) return;
+    
+    let count = 0;
+    window.recurringTransactions.forEach(recurring => {
+        if (!recurring.isActive) return;
+        const days = this.getDaysUntil(recurring);
+        if (days <= 7 && days >= 0) {
+            count++;
+        }
+    });
+    
+    countBadge.textContent = count;
+},
     
     // Start checking periodically
     startChecker() {
