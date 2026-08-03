@@ -10581,3 +10581,364 @@ body {
         padding: 1px 8px;
     }
 }
+
+/* ===== TRANSACTIONS SUMMARY - MOBILE OPTIMIZED ===== */
+
+.transactions-summary {
+    margin-bottom: 16px;
+    animation: fadeIn 0.3s ease;
+}
+
+.summary-cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+}
+
+.summary-card {
+    background: var(--gray-50);
+    border-radius: var(--radius-lg);
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--gray-200);
+    transition: all 0.2s ease;
+    min-height: 60px;
+}
+
+.summary-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
+}
+
+.summary-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+.summary-card.income .summary-icon {
+    background: rgba(16, 185, 129, 0.12);
+    color: #10b981;
+}
+
+.summary-card.expense .summary-icon {
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+}
+
+.summary-card.savings .summary-icon {
+    background: rgba(59, 130, 246, 0.12);
+    color: #3b82f6;
+}
+
+.summary-card.net .summary-icon {
+    background: rgba(139, 92, 246, 0.12);
+    color: #8b5cf6;
+}
+
+.summary-card.net.positive .summary-icon {
+    background: rgba(16, 185, 129, 0.12);
+    color: #10b981;
+}
+
+.summary-card.net.negative .summary-icon {
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+}
+
+.summary-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.summary-label {
+    font-size: 0.6rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--gray-500);
+    display: block;
+    margin-bottom: 1px;
+    line-height: 1.2;
+}
+
+.summary-value {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    line-height: 1.2;
+}
+
+/* ===== MOBILE RESPONSIVE ===== */
+
+/* Tablets and small laptops */
+@media (max-width: 992px) {
+    .summary-cards {
+        gap: 8px;
+    }
+    
+    .summary-card {
+        padding: 8px 10px;
+        min-height: 54px;
+        gap: 8px;
+    }
+    
+    .summary-icon {
+        width: 28px;
+        height: 28px;
+        font-size: 0.8rem;
+    }
+    
+    .summary-value {
+        font-size: 0.85rem;
+    }
+    
+    .summary-label {
+        font-size: 0.55rem;
+    }
+}
+
+/* Mobile phones */
+@media (max-width: 768px) {
+    .summary-cards {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+    }
+    
+    .summary-card {
+        padding: 8px 10px;
+        min-height: 48px;
+        border-radius: var(--radius-md);
+        gap: 8px;
+    }
+    
+    .summary-icon {
+        width: 26px;
+        height: 26px;
+        font-size: 0.7rem;
+        border-radius: var(--radius-sm);
+    }
+    
+    .summary-value {
+        font-size: 0.8rem;
+        font-weight: 700;
+    }
+    
+    .summary-label {
+        font-size: 0.5rem;
+        letter-spacing: 0.02em;
+    }
+}
+
+/* Small phones (iPhone SE, etc.) */
+@media (max-width: 480px) {
+    .summary-cards {
+        gap: 6px;
+    }
+    
+    .summary-card {
+        padding: 6px 8px;
+        min-height: 42px;
+        gap: 6px;
+        border-radius: var(--radius-sm);
+    }
+    
+    .summary-icon {
+        width: 22px;
+        height: 22px;
+        font-size: 0.6rem;
+    }
+    
+    .summary-value {
+        font-size: 0.7rem;
+    }
+    
+    .summary-label {
+        font-size: 0.45rem;
+    }
+}
+
+/* Extra small screens */
+@media (max-width: 380px) {
+    .summary-cards {
+        gap: 4px;
+    }
+    
+    .summary-card {
+        padding: 4px 6px;
+        min-height: 36px;
+        gap: 4px;
+    }
+    
+    .summary-icon {
+        width: 18px;
+        height: 18px;
+        font-size: 0.5rem;
+    }
+    
+    .summary-value {
+        font-size: 0.6rem;
+    }
+    
+    .summary-label {
+        font-size: 0.4rem;
+    }
+}
+
+/* ===== SUMMARY VALUE ANIMATION ===== */
+
+/* Pulse animation when value changes */
+@keyframes valuePulse {
+    0% { transform: scale(1); }
+    30% { transform: scale(1.08); color: var(--primary); }
+    70% { transform: scale(0.98); }
+    100% { transform: scale(1); }
+}
+
+@keyframes valuePulseIncome {
+    0% { transform: scale(1); }
+    30% { transform: scale(1.08); color: #10b981; }
+    70% { transform: scale(0.98); }
+    100% { transform: scale(1); }
+}
+
+@keyframes valuePulseExpense {
+    0% { transform: scale(1); }
+    30% { transform: scale(1.08); color: #ef4444; }
+    70% { transform: scale(0.98); }
+    100% { transform: scale(1); }
+}
+
+@keyframes valuePulseSavings {
+    0% { transform: scale(1); }
+    30% { transform: scale(1.08); color: #3b82f6; }
+    70% { transform: scale(0.98); }
+    100% { transform: scale(1); }
+}
+
+@keyframes valuePulseNet {
+    0% { transform: scale(1); }
+    30% { transform: scale(1.08); color: #8b5cf6; }
+    70% { transform: scale(0.98); }
+    100% { transform: scale(1); }
+}
+
+/* Animation class - applied to value when it changes */
+.summary-value.animate {
+    animation: valuePulse 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.summary-card.income .summary-value.animate {
+    animation: valuePulseIncome 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.summary-card.expense .summary-value.animate {
+    animation: valuePulseExpense 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.summary-card.savings .summary-value.animate {
+    animation: valuePulseSavings 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.summary-card.net .summary-value.animate {
+    animation: valuePulseNet 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Subtle highlight flash */
+@keyframes highlightFlash {
+    0% { background-color: rgba(99, 102, 241, 0); }
+    30% { background-color: rgba(99, 102, 241, 0.08); }
+    70% { background-color: rgba(99, 102, 241, 0.02); }
+    100% { background-color: rgba(99, 102, 241, 0); }
+}
+
+.summary-card.flash {
+    animation: highlightFlash 0.6s ease forwards;
+}
+
+/* Income flash */
+.summary-card.income.flash {
+    animation: highlightFlash 0.6s ease forwards;
+}
+
+/* Expense flash - red tint */
+@keyframes highlightFlashExpense {
+    0% { background-color: rgba(239, 68, 68, 0); }
+    30% { background-color: rgba(239, 68, 68, 0.08); }
+    70% { background-color: rgba(239, 68, 68, 0.02); }
+    100% { background-color: rgba(239, 68, 68, 0); }
+}
+
+.summary-card.expense.flash {
+    animation: highlightFlashExpense 0.6s ease forwards;
+}
+
+/* Savings flash - blue tint */
+@keyframes highlightFlashSavings {
+    0% { background-color: rgba(59, 130, 246, 0); }
+    30% { background-color: rgba(59, 130, 246, 0.08); }
+    70% { background-color: rgba(59, 130, 246, 0.02); }
+    100% { background-color: rgba(59, 130, 246, 0); }
+}
+
+.summary-card.savings.flash {
+    animation: highlightFlashSavings 0.6s ease forwards;
+}
+
+/* Net flash - purple tint */
+@keyframes highlightFlashNet {
+    0% { background-color: rgba(139, 92, 246, 0); }
+    30% { background-color: rgba(139, 92, 246, 0.08); }
+    70% { background-color: rgba(139, 92, 246, 0.02); }
+    100% { background-color: rgba(139, 92, 246, 0); }
+}
+
+.summary-card.net.flash {
+    animation: highlightFlashNet 0.6s ease forwards;
+}
+
+/* ===== TWO COLUMN GRID FOR ALL TIME + MONTHLY BREAKDOWN ===== */
+
+.two-col-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-lg);
+    margin-bottom: var(--space-xl);
+}
+
+/* Make both cards equal height */
+.two-col-grid .overview-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.two-col-grid .overview-card .card-body {
+    flex: 1;
+}
+
+/* Mobile: Stack vertically */
+@media (max-width: 768px) {
+    .two-col-grid {
+        grid-template-columns: 1fr;
+        gap: var(--space-md);
+    }
+    
+    .two-col-grid .overview-card {
+        height: auto;
+    }
+}
+
+/* Tablet: Keep side by side but smaller */
+@media (min-width: 769px) and (max-width: 1024px) {
+    .two-col-grid {
+        gap: var(--space-md);
+    }
+}
