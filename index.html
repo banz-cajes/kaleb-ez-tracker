@@ -310,8 +310,21 @@
                             <span class="all-time-label">Net Worth</span>
                             <span id="allTimeNetWorth" class="all-time-value net-value">₱ 0.00</span>
                         </div>
+                        <!-- ✅ ADD TIME TRACKING HERE -->
+        <div class="all-time-divider"></div>
+        <div class="all-time-item" style="padding: 8px 0; flex-wrap: wrap; gap: 8px;">
+            <span class="all-time-label" style="font-size: 11px;">
+                <i class="fas fa-clock" style="color: var(--primary);"></i> Tracking History
+            </span>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; font-weight: 600;">
+                <span id="timeYears" style="color: var(--primary);">0 yr</span>
+                <span id="timeMonths" style="color: var(--info);">0 mo</span>
+                <span id="timeDays" style="color: var(--success);">0 days</span>
+                <span id="timeTotalDays" style="color: var(--gray-500); font-weight: 400;">(0 days total)</span>
                     </div>
                 </div>
+            </div>
+            </div>
             </div>
 
             <!-- Monthly Breakdown Section -->
@@ -391,6 +404,43 @@
             </button>
                 </div>
             </div>
+                <!-- ✅ INSERT MONTHLY SUMMARY CARDS HERE -->
+    <div class="transactions-summary">
+        <div class="summary-cards">
+            <!-- Monthly Income -->
+            <div class="summary-card income">
+                <div class="summary-icon"><i class="fas fa-arrow-up"></i></div>
+                <div class="summary-info">
+                    <span class="summary-label">Monthly Income</span>
+                    <span id="txMonthlyIncome" class="summary-value">₱ 0.00</span>
+                </div>
+            </div>
+            <!-- Monthly Expenses -->
+            <div class="summary-card expense">
+                <div class="summary-icon"><i class="fas fa-arrow-down"></i></div>
+                <div class="summary-info">
+                    <span class="summary-label">Monthly Expenses</span>
+                    <span id="txMonthlyExpense" class="summary-value">₱ 0.00</span>
+                </div>
+            </div>
+            <!-- Monthly Savings -->
+            <div class="summary-card savings">
+                <div class="summary-icon"><i class="fas fa-piggy-bank"></i></div>
+                <div class="summary-info">
+                    <span class="summary-label">Monthly Savings</span>
+                    <span id="txMonthlySavings" class="summary-value">₱ 0.00</span>
+                </div>
+            </div>
+            <!-- Monthly Net -->
+            <div class="summary-card net">
+                <div class="summary-icon"><i class="fas fa-wallet"></i></div>
+                <div class="summary-info">
+                    <span class="summary-label">Monthly Net</span>
+                    <span id="txMonthlyNet" class="summary-value">₱ 0.00</span>
+                </div>
+            </div>
+        </div>
+    </div>
             <div class="transactions-table-container">
                 <table class="transactions-table">
                     <thead>
