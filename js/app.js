@@ -881,6 +881,77 @@ function render() {
     document.getElementById('cashOnHand') && (document.getElementById('cashOnHand').innerText = formatCurrency(cashOnHand));
     document.getElementById('balanceLabel') && (document.getElementById('balanceLabel').innerHTML = `<i class="fas fa-chart-line"></i> Net: ${formatCurrency(monthIncome - monthExpense)} | Saved: ${formatCurrency(monthSavings)}`);
 
+// ===== CALCULATE TRACKING HISTORY =====
+function calculateTrackingHistory() {
+    const transactions = window.transactions || [];
+    if (transactions.length === 0) {
+        return { years: 0, months: 0, days: 0, totalDays: 0, startDate: null, endDate: null };
+    }
+    
+    // Get the earliest and latest transaction dates
+    let earliestDate = null;
+    let latestDate = null;
+    
+    transactions.forEach(t => {
+        if (t.date) {
+            const date = new Date(t.date);
+            if (!earliestDate || date < earliestDate) earliestDate = date;
+            if (!latestDate || date > latestDate) latestDate = date;
+        }
+    });
+    
+    if (!earliestDate || !latestDate) {
+        return { years: 0, months: 0, days: 0, totalDays: 0, startDate: null, endDate: null };
+    }
+    
+    // Calculate total days between first and last transaction
+    const diffTime = Math.abs(latestDate - earliestDate);
+    const totalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both days
+    
+    // Calculate years, months, days
+    let years = 0;
+    let months = 0;
+    let days = totalDays;
+    
+    // Calculate years
+    years = Math.floor(days / 365);
+    days = days % 365;
+    
+    // Calculate months
+    months = Math.floor(days / 30);
+    days = days % 30;
+    
+    return {
+        years: years,
+        months: months,
+        days: days,
+        totalDays: totalDays,
+        startDate: earliestDate,
+        endDate: latestDate
+    };
+}
+
+// Calculate and update time tracking
+const history = calculateTrackingHistory();
+
+const timeYearsEl = document.getElementById('timeYears');
+const timeMonthsEl = document.getElementById('timeMonths');
+const timeDaysEl = document.getElementById('timeDays');
+const timeTotalDaysEl = document.getElementById('timeTotalDays');
+
+if (timeYearsEl) {
+    timeYearsEl.textContent = history.years > 0 ? `${history.years} yr` : '0 yr';
+}
+if (timeMonthsEl) {
+    timeMonthsEl.textContent = history.months > 0 ? `${history.months} mo` : '0 mo';
+}
+if (timeDaysEl) {
+    timeDaysEl.textContent = history.days > 0 ? `${history.days} days` : '0 days';
+}
+if (timeTotalDaysEl) {
+    timeTotalDaysEl.textContent = history.totalDays > 0 ? `(${history.totalDays} days total)` : '(0 days total)';
+}
+
     // Budget Progress Bar
     if (document.getElementById('budgetBar') && document.getElementById('budgetText')) {
         if (window.budgetLimit > 0) {
@@ -919,6 +990,85 @@ function render() {
         }
     }
 
+    // ===== UPDATE MONTHLY TRANSACTION SUMMARY WITH ANIMATION =====
+const monthFilterElement = document.getElementById('monthFilter');
+const selectedMonth = monthFilterElement ? monthFilterElement.value : new Date().toISOString().slice(0, 7);
+
+// Filter transactions by the selected month
+const monthlyTransactions = window.transactions.filter(t => t.date && t.date.startsWith(selectedMonth));
+
+// Calculate monthly totals
+const monthlyIncome = monthlyTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
+const monthlyExpense = monthlyTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
+const monthlySavings = monthlyTransactions.filter(t => t.type === 'savings').reduce((sum, t) => sum + (t.amount || 0), 0);
+const monthlyNet = monthlyIncome + monthlySavings - monthlyExpense;
+
+// Store previous values for comparison (add these at the top of the file)
+if (typeof window._prevMonthlyValues === 'undefined') {
+    window._prevMonthlyValues = { income: 0, expense: 0, savings: 0, net: 0 };
+}
+
+// Update function with animation
+function updateValueWithAnimation(element, newValue, oldValue, cardSelector) {
+    if (!element) return;
+    
+    const formattedValue = formatCurrency(newValue);
+    const oldFormatted = formatCurrency(oldValue);
+    
+    // Only animate if value actually changed
+    if (oldFormatted !== formattedValue) {
+        // Update the value
+        element.innerText = formattedValue;
+        
+        // Add animation class
+        element.classList.remove('animate');
+        // Force reflow
+        void element.offsetWidth;
+        element.classList.add('animate');
+        
+        // Flash the card background
+        const card = element.closest('.summary-card');
+        if (card) {
+            card.classList.remove('flash');
+            void card.offsetWidth;
+            card.classList.add('flash');
+        }
+    } else {
+        element.innerText = formattedValue;
+    }
+}
+
+// Update each value with animation
+const monthlyIncomeEl = document.getElementById('txMonthlyIncome');
+const monthlyExpenseEl = document.getElementById('txMonthlyExpense');
+const monthlySavingsEl = document.getElementById('txMonthlySavings');
+const monthlyNetEl = document.getElementById('txMonthlyNet');
+
+updateValueWithAnimation(monthlyIncomeEl, monthlyIncome, window._prevMonthlyValues.income);
+updateValueWithAnimation(monthlyExpenseEl, monthlyExpense, window._prevMonthlyValues.expense);
+updateValueWithAnimation(monthlySavingsEl, monthlySavings, window._prevMonthlyValues.savings);
+updateValueWithAnimation(monthlyNetEl, monthlyNet, window._prevMonthlyValues.net);
+
+// Store current values for next comparison
+window._prevMonthlyValues.income = monthlyIncome;
+window._prevMonthlyValues.expense = monthlyExpense;
+window._prevMonthlyValues.savings = monthlySavings;
+window._prevMonthlyValues.net = monthlyNet;
+
+// Color the net balance based on value
+if (monthlyNetEl) {
+    const parentCard = monthlyNetEl.closest('.summary-card');
+    if (parentCard) {
+        if (monthlyNet >= 0) {
+            parentCard.classList.remove('negative');
+            parentCard.classList.add('positive');
+        } else {
+            parentCard.classList.remove('positive');
+            parentCard.classList.add('negative');
+        }
+    }
+}
+
     // Monthly Breakdown Sections (Expense and Income only)
     const expenseHistoryEl = document.getElementById('expenseHistory');
     const incomeHistoryEl = document.getElementById('incomeHistory');
@@ -947,6 +1097,7 @@ function render() {
 
     renderGoals();
     renderBills();
+    
 }
 
 // ===== FIXED: DELETE TRANSACTION BY ID (WITH CACHE CLEAR) =====
