@@ -7387,8 +7387,23 @@ async init() {
     const originalLoadUserData = window.loadUserData;
     const originalSaveToFirebase = window.saveToFirebase;
     
+    function setTransactionSaveState(isSaving) {
+        const button = document.getElementById('transactionSaveBtn');
+        const status = document.getElementById('transactionSaveStatus');
+        if (button) {
+            button.disabled = isSaving;
+            button.setAttribute('aria-busy', String(isSaving));
+            button.innerHTML = isSaving
+                ? '<span class="transaction-save-spinner" aria-hidden="true"></span> Saving transaction...'
+                : '<i class="fas fa-save"></i> Save Transaction';
+        }
+        if (status) status.textContent = isSaving ? 'Saving your transaction securely...' : '';
+    }
+
     // Replace saveNewTransaction
     window.saveNewTransaction = async function() {
+        if (window.__transactionSaveInProgress) return;
+
         const type = document.querySelector('#addTransactionModal .type-btn.active')?.dataset.type || 'expense';
         const category = document.getElementById('modalCategory').value;
         let amount = parseFloat(document.getElementById('modalAmount').value);
@@ -7399,28 +7414,34 @@ async init() {
             if (window.sileo) window.sileo.error('Please fill all fields correctly', 'Error');
             return;
         }
-    
+
+        window.__transactionSaveInProgress = true;
+        setTransactionSaveState(true);
+
         const transaction = {
             id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             type, category, amount, date, note: note || '',
             createdAt: new Date().toISOString()
         };
     
-        if (!window.transactions) window.transactions = [];
-        window.transactions.unshift(transaction);
-        UnifiedOfflineManager.backupToLocalStorage();
-        
-        if (navigator.onLine && window.currentUser) {
-            try {
+        try {
+            if (!window.transactions) window.transactions = [];
+            window.transactions.unshift(transaction);
+            UnifiedOfflineManager.backupToLocalStorage();
+            
+            if (navigator.onLine && window.currentUser) {
                 await UnifiedOfflineManager.syncToFirebase([transaction]);
                 if (window.sileo) window.sileo.success(`${type === 'expense' ? 'Expense' : type === 'income' ? 'Income' : 'Savings'} added!`, 'Success');
-            } catch (error) {
+            } else {
                 UnifiedOfflineManager.addToRetryQueue(transaction);
-                if (window.sileo) window.sileo.warning('Saved offline. Will sync when online.', 'Offline Save');
+                if (window.sileo) window.sileo.success('Transaction saved offline!', 'Offline');
             }
-        } else {
+        } catch (error) {
             UnifiedOfflineManager.addToRetryQueue(transaction);
-            if (window.sileo) window.sileo.success('Transaction saved offline!', 'Offline');
+            if (window.sileo) window.sileo.warning('Saved offline. Will sync when online.', 'Offline Save');
+        } finally {
+            window.__transactionSaveInProgress = false;
+            setTransactionSaveState(false);
         }
         
         closeAddTransactionModal();
@@ -9660,6 +9681,19 @@ function getPremiumRecurringStatus(recurring) {
         }
     }
 
+    function setRecurringSaveState(isSaving) {
+        const button = document.getElementById('recurringSaveBtn');
+        const status = document.getElementById('recurringSaveStatus');
+        if (button) {
+            button.disabled = isSaving;
+            button.setAttribute('aria-busy', String(isSaving));
+            button.innerHTML = isSaving
+                ? '<span class="recurring-save-spinner" aria-hidden="true"></span>Saving...'
+                : '<i class="fas fa-save"></i> Save';
+        }
+        if (status) status.textContent = isSaving ? 'Saving your recurring transaction...' : '';
+    }
+
     function escapeHtml(value) {
         if (value === null || value === undefined) return '';
         return String(value)
@@ -9917,6 +9951,7 @@ function getPremiumRecurringStatus(recurring) {
         }
 
         window._savingRecurring = true;
+        setRecurringSaveState(true);
         const wasEdit = editRecurringIndex >= 0;
 
         try {
@@ -9948,20 +9983,20 @@ function getPremiumRecurringStatus(recurring) {
                 window.recurringTransactions.push(recurringData);
             }
 
-            // Close and render immediately (instant feedback)
-            closeRecurringModal();
-            renderRecurringTransactions();
-            notifyRecurring('success', wasEdit ? 'Updated!' : 'Created!');
-
-            // Save to Firebase in background (non-blocking)
+            // Keep the modal open while the save is in progress.
             if (typeof saveToFirebase === 'function') {
                 await saveToFirebase();
             }
+
+            closeRecurringModal();
+            renderRecurringTransactions();
+            notifyRecurring('success', wasEdit ? 'Updated!' : 'Created!');
         } catch (error) {
             console.warn('Recurring save error:', error);
             notifyRecurring('error', 'Save failed');
         } finally {
             window._savingRecurring = false;
+            setRecurringSaveState(false);
         }
     }
 
@@ -10285,6 +10320,13 @@ function getPremiumRecurringStatus(recurring) {
     }
 
     // In the processRecurringTransactions function, add this check
+    function formatRecurringDate(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
 function processRecurringTransactions() {
     ensureRecurringState();
     if (!window.recurringTransactions.length) return;
@@ -10325,8 +10367,40 @@ function processRecurringTransactions() {
         const shouldGenerate = nextDueDateValue <= today && (!lastGenerated || lastGenerated < nextDueDateValue);
         if (!shouldGenerate) return;
 
-        // ... rest of generation code ...
+        const dueDateString = formatRecurringDate(nextDueDateValue);
+        const transaction = {
+            id: `recurring_${recurring.id}_${dueDateString}`,
+            type: recurring.type,
+            category: recurring.category,
+            amount: Number(recurring.amount),
+            date: dueDateString,
+            note: `[Auto] ${recurring.name}`,
+            createdAt: new Date().toISOString(),
+            recurringId: recurring.id,
+            isAutoGenerated: true
+        };
+
+        window.transactions.unshift(transaction);
+        recurring.lastGenerated = dueDateString;
+        recurring.nextDueDate = formatRecurringDate(calculateNextDueDate(recurring, nextDueDateValue));
+        generated.push(transaction);
     });
+
+    if (!generated.length) return;
+
+    const save = typeof window.saveToFirebase === 'function' ? window.saveToFirebase() : Promise.resolve();
+    Promise.resolve(save)
+        .then(() => {
+            if (typeof render === 'function') render();
+            renderRecurringTransactions();
+            notifyRecurring('success', `${generated.length} recurring transaction${generated.length === 1 ? '' : 's'} added automatically`);
+        })
+        .catch((error) => {
+            console.error('Recurring auto-generation sync failed:', error);
+            if (typeof render === 'function') render();
+            renderRecurringTransactions();
+            notifyRecurring('warning', 'Recurring transactions were saved locally and will sync later');
+        });
 }
 
     function trackPaymentTiming(recurringId, transactionId, actualDate, dueDate) {
@@ -10408,10 +10482,10 @@ function processRecurringTransactions() {
     }
 
     function getNextDueDateStr(recurring) {
-        return getNextOccurrence(recurring).toISOString().split('T')[0];
+        return formatRecurringDate(getNextOccurrence(recurring));
     }
 
-    async function markRecurringAsPaid(recurringId, dueDate) {
+    async function markRecurringAsPaid(recurringId, dueDate, selectedPaidDate) {
         ensureRecurringState();
         const recurringIndex = window.recurringTransactions.findIndex((item) => item.id === recurringId);
         if (recurringIndex === -1) {
@@ -10426,14 +10500,25 @@ function processRecurringTransactions() {
             return;
         }
 
+        const paidDate = selectedPaidDate || formatRecurringDate(new Date());
+        const paidDateValue = new Date(`${paidDate}T00:00:00`);
+        const dueDateValue = new Date(`${dueDate}T00:00:00`);
         const today = new Date();
-        const todayStr = today.toISOString().split('T')[0];
+        today.setHours(0, 0, 0, 0);
+
+        if (Number.isNaN(paidDateValue.getTime()) || paidDateValue > today) {
+            notifyRecurring('error', 'Please choose a valid paid date');
+            return;
+        }
+
+        const dayDifference = Math.round((paidDateValue - dueDateValue) / (1000 * 60 * 60 * 24));
+        const timing = dayDifference < 0 ? 'early' : dayDifference > 0 ? 'late' : 'on-time';
         const transaction = {
             id: `${recurringId}_${Date.now()}`,
             type: recurring.type,
             category: recurring.category,
             amount: recurring.amount,
-            date: todayStr,
+            date: paidDate,
             note: `[Paid] ${recurring.name}`,
             createdAt: new Date().toISOString(),
             recurringId,
@@ -10441,10 +10526,10 @@ function processRecurringTransactions() {
         };
 
         window.transactions.unshift(transaction);
-        recurring.lastGenerated = todayStr;
-        recurring.nextDueDate = calculateNextDueDate(recurring, today).toISOString().split('T')[0];
+        recurring.lastGenerated = dueDate;
+        recurring.nextDueDate = formatRecurringDate(calculateNextDueDate(recurring, dueDateValue));
         recurring.paymentHistory = recurring.paymentHistory || [];
-        recurring.paymentHistory.push({ transactionId: transaction.id, dueDate, paidDate: todayStr, timing: 'on-time', daysDiff: 0, amount: recurring.amount });
+        recurring.paymentHistory.push({ transactionId: transaction.id, dueDate, paidDate, timing, daysDiff: Math.abs(dayDifference), amount: recurring.amount });
         updatePaymentStats(recurringIndex);
 
         try {
@@ -10504,7 +10589,11 @@ function processRecurringTransactions() {
                         </div>
                     `).join('') : '<div style="text-align: center; padding: 40px;">No payment history yet</div>'}
                 </div>
-                <button class="btn-primary" onclick="markRecurringAsPaid('${recurringId}', '${getNextDueDateStr(recurring)}')" style="margin-top: 16px;"><i class="fas fa-check-circle"></i> Mark Current Period as Paid</button>
+                <div class="form-group" style="margin-top: 16px;">
+                    <label class="form-label" for="recurringPaidDate">Paid Date</label>
+                    <input id="recurringPaidDate" class="form-control" type="date" value="${formatRecurringDate(new Date())}" max="${formatRecurringDate(new Date())}">
+                </div>
+                <button class="btn-primary" onclick="markRecurringAsPaid('${recurringId}', '${getNextDueDateStr(recurring)}', document.getElementById('recurringPaidDate').value)" style="margin-top: 16px;"><i class="fas fa-check-circle"></i> Mark Current Period as Paid</button>
             </div>
         `;
         document.body.appendChild(modal);

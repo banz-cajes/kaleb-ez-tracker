@@ -1334,6 +1334,30 @@ body.modal-open {
     margin-top: 16px;
 }
 
+#addTransactionModal .btn-primary:disabled {
+    cursor: wait;
+    opacity: 0.78;
+    transform: none;
+    box-shadow: none;
+}
+
+.transaction-save-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.45);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+}
+
+.transaction-save-status {
+    min-height: 20px;
+    margin-top: 12px;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    text-align: center;
+}
+
 /* ===== FORM ELEMENTS ===== */
 .form-group {
     margin-bottom: var(--space-lg);

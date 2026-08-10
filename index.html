@@ -1084,9 +1084,9 @@
             </div>
 
             <div class="form-group">
-                <label class="form-label">Date</label>
+                <label class="form-label" for="modalDate">Transaction Date</label>
                 <div class="date-wrapper">
-                    <input type="date" id="modalDate" class="form-control">
+                    <input type="date" id="modalDate" class="form-control" aria-label="Transaction date">
                 </div>
             </div>
 
@@ -1095,7 +1095,8 @@
                 <textarea id="modalNote" class="form-control" rows="2" placeholder="Optional"></textarea>
             </div>
 
-            <button class="btn-primary" onclick="saveNewTransaction()" style="width: 100%; justify-content: center;">
+            <div id="transactionSaveStatus" class="transaction-save-status" role="status" aria-live="polite"></div>
+            <button id="transactionSaveBtn" class="btn-primary" onclick="saveNewTransaction()" style="width: 100%; justify-content: center;">
                 <i class="fas fa-save"></i> Save Transaction
             </button>
         </div>
@@ -1333,10 +1334,11 @@
                 <button class="btn-modal-cancel" onclick="closeRecurringModal()">
                     Cancel
                 </button>
-                <button class="btn-modal-save" onclick="saveRecurringTransaction()">
+                <button id="recurringSaveBtn" class="btn-modal-save" onclick="saveRecurringTransaction()">
                     <i class="fas fa-save"></i> Save
                 </button>
             </div>
+            <div id="recurringSaveStatus" class="recurring-save-status" role="status" aria-live="polite"></div>
         </div>
     </div>
 </div>
@@ -1412,10 +1414,9 @@
             console.error('[App] Unhandled rejection', e.reason);
         });
 
-        // Initialize Firebase and App
-        firebase.initializeApp(firebaseConfig);
-        window.auth = firebase.auth();
-        window.db = firebase.firestore();
+        // Firebase services are initialized in js/config.js
+        const auth = window.auth;
+        const db = window.db;
 
         // Make sure global variables exist
         window.transactions = [];

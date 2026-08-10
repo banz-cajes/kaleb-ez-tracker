@@ -7,5 +7,10 @@ const firebaseConfig = {
     appId: "1:59969339086:web:81a728e601a1a7a4921a9f"
 };
 
-// Initialize Firebase FIRST
-firebase.initializeApp(firebaseConfig);
+// Initialize Firebase once and expose shared services for every page.
+if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+}
+
+window.auth = firebase.auth();
+window.db = firebase.firestore();

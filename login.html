@@ -331,6 +331,11 @@
             cursor: pointer;
             transition: all 0.3s;
             margin-top: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 50px;
         }
 
         .btn:hover {
@@ -338,19 +343,64 @@
             box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
         }
 
+        .btn:disabled {
+            cursor: wait;
+            opacity: 0.85;
+            transform: none;
+        }
+
+        .btn-spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255, 255, 255, 0.45);
+            border-top-color: #ffffff;
+            border-radius: 50%;
+            animation: spin 0.75s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .form-message,
         .error-message {
-            background: rgba(239, 68, 68, 0.1);
-            border-left: 3px solid #ef4444;
+            background: rgba(99, 102, 241, 0.1);
+            border-left: 3px solid #6366f1;
             padding: 12px;
             border-radius: 12px;
             font-size: 13px;
-            color: #ef4444;
+            color: #4338ca;
             margin: 16px 0;
             display: none;
+            line-height: 1.45;
         }
 
+        .form-message.show,
         .error-message.show {
             display: block;
+        }
+
+        .form-message.error,
+        .error-message.error {
+            background: rgba(239, 68, 68, 0.1);
+            border-left-color: #ef4444;
+            color: #dc2626;
+        }
+
+        .form-message.success,
+        .error-message.success {
+            background: rgba(16, 185, 129, 0.1);
+            border-left-color: #10b981;
+            color: #047857;
+        }
+
+        .form-message.info,
+        .error-message.info {
+            background: rgba(59, 130, 246, 0.1);
+            border-left-color: #3b82f6;
+            color: #1d4ed8;
         }
 
         @media (max-width: 480px) {
@@ -428,9 +478,9 @@
                 <a href="#" class="forgot" onclick="showForgotPassword(); return false;">Forgot Password?</a>
             </div>
 
-            <div id="loginError" class="error-message"></div>
+            <div id="loginError" class="form-message" role="status" aria-live="polite"></div>
 
-            <button class="btn" onclick="handleLogin()">Sign In →</button>
+            <button id="loginBtn" class="btn" type="button" onclick="handleLogin()">Sign In →</button>
         </div>
 
         <!-- Sign Up Form -->
@@ -463,17 +513,77 @@
                 </div>
             </div>
 
-            <div id="signupError" class="error-message"></div>
+            <div id="signupError" class="form-message" role="status" aria-live="polite"></div>
 
-            <button class="btn" onclick="handleSignup()">Create Account →</button>
+            <button id="signupBtn" class="btn" type="button" onclick="handleSignup()">Create Account →</button>
         </div>
     </div>
 
     <script>
-        // Initialize Firebase
-        firebase.initializeApp(firebaseConfig);
-        const auth = firebase.auth();
-        const db = firebase.firestore();
+        if (typeof clearFormMessage !== 'function') {
+            window.clearFormMessage = function (elementId) {
+                const messageEl = document.getElementById(elementId);
+                if (!messageEl) return;
+                messageEl.textContent = '';
+                messageEl.className = 'form-message';
+            };
+        }
+
+        if (typeof setFormMessage !== 'function') {
+            window.setFormMessage = function (elementId, message, type = 'error') {
+                const messageEl = document.getElementById(elementId);
+                if (!messageEl) return;
+                messageEl.textContent = message;
+                messageEl.className = `form-message show ${type}`;
+            };
+        }
+
+        if (typeof setButtonLoading !== 'function') {
+            window.setButtonLoading = function (button, isLoading, loadingText) {
+                if (!button) return;
+
+                if (isLoading) {
+                    button.dataset.originalHtml = button.innerHTML;
+                    button.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span><span>${loadingText}</span>`;
+                    button.disabled = true;
+                    button.setAttribute('aria-busy', 'true');
+                } else {
+                    button.innerHTML = button.dataset.originalHtml || button.innerHTML;
+                    button.disabled = false;
+                    button.removeAttribute('aria-busy');
+                    delete button.dataset.originalHtml;
+                }
+            };
+        }
+
+        if (typeof getFriendlyAuthError !== 'function') {
+            window.getFriendlyAuthError = function (error) {
+                switch (error?.code) {
+                    case 'auth/invalid-email':
+                        return 'Please enter a valid email address.';
+                    case 'auth/user-not-found':
+                    case 'auth/wrong-password':
+                    case 'auth/invalid-credential':
+                        return 'The email or password does not match our records.';
+                    case 'auth/too-many-requests':
+                        return 'Too many attempts. Please wait a few minutes and try again.';
+                    case 'auth/network-request-failed':
+                        return 'Network problem. Check your internet connection and try again.';
+                    default:
+                        return error?.message || 'Something went wrong. Please try again.';
+                }
+            };
+        }
+
+        function getFirebaseAuth() {
+            if (window.auth) return window.auth;
+            if (window.firebase && firebase.apps && firebase.apps.length) {
+                window.auth = firebase.auth();
+                window.db = firebase.firestore();
+                return window.auth;
+            }
+            return null;
+        }
 
         // Tab switching
         document.querySelectorAll('.tab').forEach(tab => {
@@ -486,11 +596,18 @@
         });
 
         // Check if already logged in
-        auth.onAuthStateChanged((user) => {
-            if (user) {
-                window.location.href = 'index.html';
-            }
-        });
+        const loginAuth = getFirebaseAuth();
+        if (loginAuth) {
+            loginAuth.onAuthStateChanged((user) => {
+                if (user) {
+                    window.location.href = 'index.html';
+                }
+            });
+        } else {
+            const loginError = document.getElementById('loginError');
+            loginError.textContent = 'Login service is still loading. Please refresh the page.';
+            loginError.classList.add('show');
+        }
 
         // Check if user has saved session
         function checkSavedSession() {
@@ -508,34 +625,32 @@
             }
         }
 
-        function saveForQuickLogin(email, password) {
-            if (confirm('Save your login for quick access next time?')) {
-                localStorage.setItem('quick_login_email', email);
-                localStorage.setItem('quick_login_password', password);
-                localStorage.setItem('quick_login_timestamp', Date.now().toString());
-                alert('Saved! Next time you can login quickly.');
-            }
+        function saveForQuickLogin(email) {
+            localStorage.setItem('quick_login_email', email);
+            localStorage.removeItem('quick_login_password');
+            localStorage.setItem('quick_login_timestamp', Date.now().toString());
         }
 
         async function handleLogin() {
-            const email = document.getElementById('loginEmail').value;
+            const auth = getFirebaseAuth();
+            const email = document.getElementById('loginEmail').value.trim();
             const password = document.getElementById('loginPassword').value;
             const rememberMe = document.getElementById('rememberMe')?.checked || false;
-            const errorDiv = document.getElementById('loginError');
 
-            errorDiv.classList.remove('show');
-            errorDiv.textContent = '';
+            clearFormMessage('loginError');
+
+            if (!auth) {
+                setFormMessage('loginError', 'Login service is unavailable. Please refresh the page.', 'error');
+                return;
+            }
 
             if (!email || !password) {
-                errorDiv.textContent = 'Please enter email and password';
-                errorDiv.classList.add('show');
+                setFormMessage('loginError', 'Please enter your email and password.', 'error');
                 return;
             }
 
             const btn = document.querySelector('#loginForm .btn');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Signing in...';
-            btn.disabled = true;
+            setButtonLoading(btn, true, 'Signing in...');
 
             try {
                 const persistence = rememberMe ?
@@ -545,20 +660,20 @@
                 await auth.signInWithEmailAndPassword(email, password);
 
                 if (rememberMe) {
-                    saveForQuickLogin(email, password);
+                    saveForQuickLogin(email);
+                    setFormMessage('loginError', 'Signed in. Your email will be remembered on this device.', 'success');
+                } else {
+                    localStorage.removeItem('quick_login_email');
+                    localStorage.removeItem('quick_login_password');
+                    localStorage.removeItem('quick_login_timestamp');
+                    setFormMessage('loginError', 'Signed in. Loading your dashboard...', 'success');
                 }
 
                 window.location.href = 'index.html';
             } catch (error) {
-                let errorMessage = 'Invalid email or password.';
-                if (error.code === 'auth/user-not-found') errorMessage = 'No account found with this email';
-                else if (error.code === 'auth/wrong-password') errorMessage = 'Incorrect password';
-                else if (error.code === 'auth/too-many-requests') errorMessage = 'Too many attempts. Try again later.';
-                errorDiv.textContent = errorMessage;
-                errorDiv.classList.add('show');
+                setFormMessage('loginError', getFriendlyAuthError(error), 'error');
             } finally {
-                btn.innerHTML = originalText;
-                btn.disabled = false;
+                setButtonLoading(btn, false);
             }
         }
 
@@ -571,7 +686,6 @@
             }
         });
     </script>
-    <script src="js/auth.js"></script>
 </body>
 
 </html>
