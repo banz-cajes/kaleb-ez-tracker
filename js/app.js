@@ -1103,6 +1103,47 @@ if (monthlyNetEl) {
 // ===== FIXED: DELETE TRANSACTION BY ID (WITH CACHE CLEAR) =====
 window._deletingTransactions = window._deletingTransactions || new Set();
 
+function showDeleteConfirmation({ title, message, confirmLabel = 'Delete' }) {
+    return new Promise((resolve) => {
+        const existing = document.getElementById('deleteConfirmationModal');
+        if (existing) existing.remove();
+        const modal = document.createElement('div');
+        modal.id = 'deleteConfirmationModal';
+        modal.className = 'modal delete-confirmation-modal';
+        modal.style.display = 'flex';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        modal.setAttribute('aria-labelledby', 'deleteConfirmationTitle');
+        const escapeConfirmationText = (value) => String(value)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        modal.innerHTML = `
+            <div class="modal-content delete-confirmation-content">
+                <div class="delete-confirmation-icon" aria-hidden="true"><i class="fas fa-trash-alt"></i></div>
+                <h2 id="deleteConfirmationTitle">${escapeConfirmationText(title)}</h2>
+                <p>${escapeConfirmationText(message)}</p>
+                <div class="delete-confirmation-actions">
+                    <button type="button" class="btn-secondary" data-delete-cancel>Cancel</button>
+                    <button type="button" class="btn-danger" data-delete-confirm><i class="fas fa-trash"></i> ${confirmLabel}</button>
+                </div>
+            </div>`;
+        const close = (confirmed) => {
+            modal.remove();
+            document.body.classList.remove('modal-open');
+            resolve(confirmed);
+        };
+        modal.querySelector('[data-delete-cancel]').addEventListener('click', () => close(false));
+        modal.querySelector('[data-delete-confirm]').addEventListener('click', () => close(true));
+        modal.addEventListener('click', (event) => { if (event.target === modal) close(false); });
+        document.addEventListener('keydown', function onKeyDown(event) {
+            if (event.key === 'Escape') close(false);
+        }, { once: true });
+        document.body.appendChild(modal);
+        document.body.classList.add('modal-open');
+        modal.querySelector('[data-delete-cancel]').focus();
+    });
+}
+
 function deleteTransactionById(txId) {
     console.log('🗑️ deleteTransactionById called for ID:', txId);
     if (!txId || window._deletingTransactions.has(txId)) return;
@@ -1121,7 +1162,12 @@ function deleteTransactionById(txId) {
     // EXTRA: Check if this is a savings transaction
     const isSavings = deletedTx.type === 'savings';
 
-    if (confirm(`Delete this ${deletedTx.type} transaction?\n\nCategory: ${deletedTx.category}\nAmount: ${formatCurrency(deletedTx.amount)}\nDate: ${formatDate(deletedTx.date)}`)) {
+    showDeleteConfirmation({
+        title: 'Delete transaction?',
+        message: `This permanently removes the ${deletedTx.type} transaction for ${formatCurrency(deletedTx.amount)} in ${deletedTx.category} on ${formatDate(deletedTx.date)}.`,
+        confirmLabel: 'Delete transaction'
+    }).then((confirmed) => {
+        if (!confirmed) return;
         window._deletingTransactions.add(txId);
         
         // 1. Remove from local array immediately
@@ -1190,7 +1236,7 @@ function deleteTransactionById(txId) {
         } else {
             window._deletingTransactions.delete(txId);
         }
-    }
+    });
 }
 
 // ===== FIXED: CLEAR ALL CACHES =====
@@ -9682,8 +9728,9 @@ function getPremiumRecurringStatus(recurring) {
     }
 
     function setRecurringSaveState(isSaving) {
-        const button = document.getElementById('recurringSaveBtn');
-        const status = document.getElementById('recurringSaveStatus');
+        const modal = document.getElementById('recurringModal');
+        const button = modal?.querySelector('#recurringSaveBtn, .btn-save');
+        const status = modal?.querySelector('#recurringSaveStatus, #recurringFormStatus');
         if (button) {
             button.disabled = isSaving;
             button.setAttribute('aria-busy', String(isSaving));
@@ -9691,7 +9738,32 @@ function getPremiumRecurringStatus(recurring) {
                 ? '<span class="recurring-save-spinner" aria-hidden="true"></span>Saving...'
                 : '<i class="fas fa-save"></i> Save';
         }
-        if (status) status.textContent = isSaving ? 'Saving your recurring transaction...' : '';
+        if (status) {
+            status.textContent = isSaving ? 'Saving your recurring transaction...' : '';
+            status.style.display = isSaving ? 'block' : 'none';
+        }
+        modal?.classList.toggle('is-saving', isSaving);
+    }
+
+    function setRecurringDeleteState(isDeleting) {
+        const modal = document.getElementById('recurringModal');
+        const button = modal?.querySelector('#recurringDeleteBtn');
+        if (button) {
+            button.disabled = isDeleting;
+            button.setAttribute('aria-busy', String(isDeleting));
+            button.innerHTML = isDeleting
+                ? '<span class="recurring-save-spinner" aria-hidden="true"></span>Deleting...'
+                : '<i class="fas fa-trash"></i> Delete';
+        }
+        modal?.classList.toggle('is-deleting', isDeleting);
+    }
+
+    function showRecurringLoading(message) {
+        return window.sileo?.loading ? window.sileo.loading(message, 'Please wait') : null;
+    }
+
+    function hideRecurringLoading(notification) {
+        if (notification && window.sileo?.remove) window.sileo.remove(notification);
     }
 
     function escapeHtml(value) {
@@ -9704,9 +9776,61 @@ function getPremiumRecurringStatus(recurring) {
             .replace(/'/g, '&#39;');
     }
 
+    // Older sessions may already have a recurring modal in the page. Upgrade it
+    // in place so adding the due-date field never breaks Add or Edit actions.
+    function ensureRecurringStartDateField(modal) {
+        let input = modal?.querySelector('#recurringStartDate');
+        if (input) return input;
+
+        const form = modal?.querySelector('#recurringForm');
+        if (!form) return null;
+        const group = document.createElement('div');
+        group.className = 'form-group form-row-full';
+        group.innerHTML = `
+            <label for="recurringStartDate">First Due Date <span class="required">*</span></label>
+            <input type="date" id="recurringStartDate" required>
+            <span class="help">Choose when this recurring transaction should first be due.</span>`;
+        const dayField = form.querySelector('#recurringDayOfMonth');
+        const dayGroup = dayField?.closest('.form-group');
+        if (dayGroup) dayGroup.insertAdjacentElement('afterend', group);
+        else form.appendChild(group);
+        return group.querySelector('#recurringStartDate');
+    }
+
+    function hasRecurringModalFields(modal) {
+        const requiredFields = [
+            'recurringForm',
+            'recurringModalTitle',
+            'recurringName',
+            'recurringAmount',
+            'recurringType',
+            'recurringCategory',
+            'recurringFrequency',
+            'recurringDayOfMonth',
+            'recurringActive',
+            'recurringDeleteBtn'
+        ];
+        return Boolean(modal) && requiredFields.every((id) => modal.querySelector(`#${id}`));
+    }
+
+    function recurringInputDate(value) {
+        if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? formatRecurringDate(new Date()) : formatRecurringDate(date);
+    }
+
     function createRecurringModal() {
         let modal = document.getElementById('recurringModal');
-        if (modal) return modal;
+        if (modal) {
+            // A legacy modal can remain in the DOM after an application update.
+            // Replace it when its controls do not match the current workflow,
+            // rather than allowing a later .value assignment to throw.
+            if (hasRecurringModalFields(modal)) {
+                ensureRecurringStartDateField(modal);
+                return modal;
+            }
+            modal.remove();
+        }
 
         modal = document.createElement('div');
         modal.id = 'recurringModal';
@@ -9755,6 +9879,11 @@ function getPremiumRecurringStatus(recurring) {
                     <div class="form-group form-row-full">
                         <label>Day of Month (1-31) <span class="required">*</span> <span class="help" id="dayHelp">Optional for non-monthly</span></label>
                         <input type="number" id="recurringDayOfMonth" min="1" max="31" value="1" required>
+                    </div>
+                    <div class="form-group form-row-full">
+                        <label for="recurringStartDate">First Due Date <span class="required">*</span></label>
+                        <input type="date" id="recurringStartDate" required>
+                        <span class="help">Choose when this recurring transaction should first be due.</span>
                     </div>
                     <div class="form-group">
                         <div class="checkbox-wrapper">
@@ -9811,7 +9940,8 @@ function getPremiumRecurringStatus(recurring) {
     }
 
     function updateRecurringCategories() {
-        const modal = document.getElementById('recurringModal') || createRecurringModal();
+        const modal = document.getElementById('recurringModal');
+        if (!modal) return;
         const type = modal.querySelector('#recurringType')?.value || 'expense';
         const categorySelect = modal.querySelector('#recurringCategory');
         if (!categorySelect) return;
@@ -9830,6 +9960,11 @@ function getPremiumRecurringStatus(recurring) {
         window.editRecurringIndex = -1;
     }
 
+    function resetRecurringFormScroll(modal) {
+        const form = modal?.querySelector('#recurringForm');
+        if (form) form.scrollTop = 0;
+    }
+
     function createRecurringTransaction() {
         ensureRecurringState();
         createRecurringModal();
@@ -9841,6 +9976,12 @@ function getPremiumRecurringStatus(recurring) {
         document.getElementById('recurringType').value = 'expense';
         document.getElementById('recurringFrequency').value = 'monthly';
         document.getElementById('recurringDayOfMonth').value = '1';
+        const startDateInput = ensureRecurringStartDateField(modal);
+        if (!startDateInput) {
+            notifyRecurring('error', 'Recurring form is missing the due date field. Please refresh and try again.');
+            return;
+        }
+        startDateInput.value = recurringInputDate(new Date());
         document.getElementById('recurringActive').checked = true;
         document.getElementById('recurringModalTitle').innerHTML = '<i class="fas fa-plus"></i> Add Recurring Transaction';
         document.getElementById('recurringDeleteBtn').style.display = 'none';
@@ -9853,6 +9994,7 @@ function getPremiumRecurringStatus(recurring) {
         updateRecurringCategories();
         editRecurringIndex = -1;
         window.editRecurringIndex = -1;
+        resetRecurringFormScroll(modal);
         modal.classList.add('active');
         modal.style.display = 'flex';
         document.body.classList.add('modal-open');
@@ -9861,14 +10003,26 @@ function getPremiumRecurringStatus(recurring) {
     function editRecurringTransaction(index) {
         ensureRecurringState();
         const recurring = window.recurringTransactions[index];
-        if (!recurring) return;
+        if (!recurring) return false;
 
-        const modal = document.getElementById('recurringModal') || createRecurringModal();
+        // Always pass through the modal factory. It upgrades or replaces stale
+        // markup left by an older version before any form field is populated.
+        const modal = createRecurringModal();
+        if (!modal) {
+            notifyRecurring('error', 'Unable to open the recurring transaction form.');
+            return false;
+        }
         document.getElementById('recurringName').value = recurring.name || '';
         document.getElementById('recurringAmount').value = recurring.amount || '';
         document.getElementById('recurringType').value = recurring.type || 'expense';
         document.getElementById('recurringFrequency').value = recurring.frequency || 'monthly';
         document.getElementById('recurringDayOfMonth').value = recurring.dayOfMonth || 1;
+        const startDateInput = ensureRecurringStartDateField(modal);
+        if (!startDateInput) {
+            notifyRecurring('error', 'Recurring form is missing the due date field. Please refresh and try again.');
+            return false;
+        }
+        startDateInput.value = recurringInputDate(recurring.nextDueDate);
         document.getElementById('recurringActive').checked = recurring.isActive !== false;
 
         // Ensure event listener is attached for type change
@@ -9885,6 +10039,7 @@ function getPremiumRecurringStatus(recurring) {
         editRecurringIndex = index;
         window.editRecurringIndex = index;
 
+        resetRecurringFormScroll(modal);
         modal.classList.add('active');
         modal.style.display = 'flex';
         document.body.classList.add('modal-open');
@@ -9892,37 +10047,47 @@ function getPremiumRecurringStatus(recurring) {
 
     async function deleteRecurringTransaction(index) {
         ensureRecurringState();
-        if (window._deletingRecurring) return;
+        if (window._deletingRecurring) return false;
         
         const recurring = window.recurringTransactions[index];
         if (!recurring) return;
 
-        const confirmed = confirm(`Delete ${recurring.name || 'this recurring transaction'}?`);
-        if (!confirmed) return;
+        const confirmed = await showDeleteConfirmation({
+            title: 'Delete recurring transaction?',
+            message: `This will remove ${recurring.name || 'this recurring transaction'} and its future schedule. Past transactions will remain in history.`,
+            confirmLabel: 'Delete recurring'
+        });
+        if (!confirmed) return false;
 
         window._deletingRecurring = true;
+        setRecurringDeleteState(true);
+        const deletingNotice = showRecurringLoading('Deleting recurring transaction...');
         const deletedRecurring = window.recurringTransactions.splice(index, 1)[0];
         renderRecurringTransactions();
-        notifyRecurring('success', `Deleted!`);
         
         try {
             if (typeof saveToFirebase === 'function') {
                 await saveToFirebase();
             }
+            notifyRecurring('success', 'Deleted!');
         } catch (error) {
             console.warn('Recurring delete sync failed, restoring:', error);
             window.recurringTransactions.splice(index, 0, deletedRecurring);
             renderRecurringTransactions();
             notifyRecurring('error', 'Delete failed - restored');
+            return false;
         } finally {
             window._deletingRecurring = false;
+            setRecurringDeleteState(false);
+            hideRecurringLoading(deletingNotice);
         }
+        return true;
     }
 
-    function deleteRecurringFromEdit() {
+    async function deleteRecurringFromEdit() {
         if (editRecurringIndex < 0) return;
-        deleteRecurringTransaction(editRecurringIndex);
-        closeRecurringModal();
+        const deleted = await deleteRecurringTransaction(editRecurringIndex);
+        if (deleted) closeRecurringModal();
     }
 
     async function saveRecurringTransaction() {
@@ -9935,6 +10100,7 @@ function getPremiumRecurringStatus(recurring) {
         const category = document.getElementById('recurringCategory')?.value;
         const frequency = document.getElementById('recurringFrequency')?.value || 'monthly';
         const dayOfMonth = parseInt(document.getElementById('recurringDayOfMonth')?.value || 1, 10);
+        const startDate = document.getElementById('recurringStartDate')?.value;
         const isActive = document.getElementById('recurringActive')?.checked !== false;
 
         if (!name) {
@@ -9947,6 +10113,10 @@ function getPremiumRecurringStatus(recurring) {
         }
         if (Number.isNaN(amount) || amount <= 0) {
             notifyRecurring('error', 'Please enter a valid amount');
+            return;
+        }
+        if (!startDate || Number.isNaN(new Date(`${startDate}T00:00:00`).getTime())) {
+            notifyRecurring('error', 'Please choose the first due date');
             return;
         }
 
@@ -9962,13 +10132,15 @@ function getPremiumRecurringStatus(recurring) {
                 category,
                 type,
                 frequency,
-                dayOfMonth: Math.min(31, Math.max(1, dayOfMonth)),
+                dayOfMonth: (frequency === 'monthly' || frequency === 'yearly')
+                    ? new Date(`${startDate}T00:00:00`).getDate()
+                    : Math.min(31, Math.max(1, dayOfMonth)),
                 isActive,
                 createdAt: new Date().toISOString(),
                 lastGenerated: null,
                 paymentHistory: [],
                 paymentStats: null,
-                nextDueDate: null
+                nextDueDate: startDate
             };
 
             if (wasEdit && window.recurringTransactions[editRecurringIndex]) {
@@ -9977,7 +10149,7 @@ function getPremiumRecurringStatus(recurring) {
                 recurringData.lastGenerated = window.recurringTransactions[editRecurringIndex].lastGenerated || null;
                 recurringData.paymentHistory = window.recurringTransactions[editRecurringIndex].paymentHistory || [];
                 recurringData.paymentStats = window.recurringTransactions[editRecurringIndex].paymentStats || null;
-                recurringData.nextDueDate = window.recurringTransactions[editRecurringIndex].nextDueDate || null;
+                recurringData.nextDueDate = startDate;
                 window.recurringTransactions[editRecurringIndex] = recurringData;
             } else {
                 window.recurringTransactions.push(recurringData);
@@ -10120,9 +10292,10 @@ function getPremiumRecurringStatus(recurring) {
                         </div>
                     </div>
                     <div class="recurring-card-footer">
-                        <button class="card-btn-premium card-btn-edit" onclick="editRecurringTransaction(${actualIndex})"><i class="fas fa-edit"></i> Edit</button>
-                        <button class="card-btn-premium card-btn-history" onclick="showPaymentHistoryModal('${recurring.id}')"><i class="fas fa-chart-line"></i> History</button>
-                        <button class="card-btn-premium card-btn-delete" onclick="deleteRecurringTransaction(${actualIndex})"><i class="fas fa-trash"></i> Delete</button>
+                        <button class="card-btn-premium card-btn-edit" title="Edit recurring transaction" aria-label="Edit recurring transaction" onclick="editRecurringTransaction(${actualIndex})"><i class="fas fa-edit"></i><span class="card-btn-label">Edit</span></button>
+                        <button class="card-btn-premium card-btn-paid" title="Record payment" aria-label="Record payment" onclick="showRecurringPaymentModal('${recurring.id}')"><i class="fas fa-check-circle"></i><span class="card-btn-label">Paid</span></button>
+                        <button class="card-btn-premium card-btn-history" title="View payment history" aria-label="View payment history" onclick="showPaymentHistoryModal('${recurring.id}')"><i class="fas fa-chart-line"></i><span class="card-btn-label">History</span></button>
+                        <button class="card-btn-premium card-btn-delete" title="Delete recurring transaction" aria-label="Delete recurring transaction" onclick="deleteRecurringTransaction(${actualIndex})"><i class="fas fa-trash"></i><span class="card-btn-label">Delete</span></button>
                     </div>
                 </div>
             `;
@@ -10490,14 +10663,14 @@ function processRecurringTransactions() {
         const recurringIndex = window.recurringTransactions.findIndex((item) => item.id === recurringId);
         if (recurringIndex === -1) {
             notifyRecurring('error', 'Recurring transaction not found');
-            return;
+            return false;
         }
 
         const recurring = window.recurringTransactions[recurringIndex];
         const alreadyPaid = recurring.paymentHistory?.some((entry) => entry.dueDate === dueDate);
         if (alreadyPaid) {
             notifyRecurring('warning', 'Already marked as paid for this period');
-            return;
+            return false;
         }
 
         const paidDate = selectedPaidDate || formatRecurringDate(new Date());
@@ -10508,7 +10681,7 @@ function processRecurringTransactions() {
 
         if (Number.isNaN(paidDateValue.getTime()) || paidDateValue > today) {
             notifyRecurring('error', 'Please choose a valid paid date');
-            return;
+            return false;
         }
 
         const dayDifference = Math.round((paidDateValue - dueDateValue) / (1000 * 60 * 60 * 24));
@@ -10541,6 +10714,82 @@ function processRecurringTransactions() {
         if (typeof render === 'function') render();
         renderRecurringTransactions();
         notifyRecurring('success', 'Payment recorded successfully');
+        return true;
+    }
+
+    function showRecurringPaymentModal(recurringId) {
+        const recurring = window.recurringTransactions.find((item) => item.id === recurringId);
+        if (!recurring) return false;
+        document.getElementById('recurringPaymentModal')?.remove();
+
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.id = 'recurringPaymentModal';
+        modal.style.display = 'flex';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 430px;">
+                <button class="modal-close" type="button" aria-label="Close"><i class="fas fa-times"></i></button>
+                <h2><i class="fas fa-check-circle"></i> Record Payment</h2>
+                <p>Record a payment for <strong>${escapeHtml(recurring.name)}</strong>.</p>
+                <div class="form-group" style="margin-top: 16px;">
+                    <label class="form-label" for="recurringPaidDate">Paid Date</label>
+                    <input id="recurringPaidDate" class="form-control" type="date" value="${formatRecurringDate(new Date())}" max="${formatRecurringDate(new Date())}">
+                </div>
+                <div class="delete-confirmation-actions" style="margin-top: 20px;">
+                    <button type="button" class="btn-secondary" data-payment-cancel>Cancel</button>
+                    <button type="button" class="btn-primary" data-payment-save><i class="fas fa-check-circle"></i> Mark as paid</button>
+                </div>
+                <div class="recurring-payment-status" data-payment-status aria-live="polite"></div>
+            </div>`;
+        const close = () => {
+            modal.remove();
+            document.body.classList.remove('modal-open');
+        };
+        modal.querySelector('.modal-close').addEventListener('click', close);
+        modal.querySelector('[data-payment-cancel]').addEventListener('click', close);
+        modal.querySelector('[data-payment-save]').addEventListener('click', async () => {
+            const saveButton = modal.querySelector('[data-payment-save]');
+            const cancelButton = modal.querySelector('[data-payment-cancel]');
+            const closeButton = modal.querySelector('.modal-close');
+            const dateInput = modal.querySelector('#recurringPaidDate');
+            const status = modal.querySelector('[data-payment-status]');
+            if (saveButton.disabled) return;
+
+            const paidDate = dateInput.value;
+            saveButton.disabled = true;
+            cancelButton.disabled = true;
+            closeButton.disabled = true;
+            dateInput.disabled = true;
+            saveButton.setAttribute('aria-busy', 'true');
+            saveButton.innerHTML = '<span class="recurring-save-spinner" aria-hidden="true"></span>Recording...';
+            status.textContent = 'Recording payment...';
+            modal.classList.add('is-recording-payment');
+
+            try {
+                const recorded = await markRecurringAsPaid(recurringId, getNextDueDateStr(recurring), paidDate);
+                if (recorded) {
+                    close();
+                    return;
+                }
+            } catch (error) {
+                console.warn('Recurring payment save failed:', error);
+                notifyRecurring('error', 'Unable to record payment. Please try again.');
+            } finally {
+                if (modal.isConnected) {
+                    saveButton.disabled = false;
+                    cancelButton.disabled = false;
+                    closeButton.disabled = false;
+                    dateInput.disabled = false;
+                    saveButton.removeAttribute('aria-busy');
+                    saveButton.innerHTML = '<i class="fas fa-check-circle"></i> Mark as paid';
+                    status.textContent = '';
+                    modal.classList.remove('is-recording-payment');
+                }
+            }
+        });
+        modal.addEventListener('click', (event) => { if (event.target === modal) close(); });
+        document.body.appendChild(modal);
+        document.body.classList.add('modal-open');
     }
 
     function showPaymentHistoryModal(recurringId) {
@@ -10553,7 +10802,7 @@ function processRecurringTransactions() {
         modal.style.display = 'flex';
         modal.innerHTML = `
             <div class="modal-content" style="max-width: 500px;">
-                <button class="modal-close" onclick="this.closest('.modal').remove()">
+                <button class="modal-close" type="button" aria-label="Close">
                     <i class="fas fa-times"></i>
                 </button>
                 <h2><i class="fas fa-history"></i> Payment History: ${escapeHtml(recurring.name)}</h2>
@@ -10589,13 +10838,18 @@ function processRecurringTransactions() {
                         </div>
                     `).join('') : '<div style="text-align: center; padding: 40px;">No payment history yet</div>'}
                 </div>
-                <div class="form-group" style="margin-top: 16px;">
-                    <label class="form-label" for="recurringPaidDate">Paid Date</label>
-                    <input id="recurringPaidDate" class="form-control" type="date" value="${formatRecurringDate(new Date())}" max="${formatRecurringDate(new Date())}">
-                </div>
-                <button class="btn-primary" onclick="markRecurringAsPaid('${recurringId}', '${getNextDueDateStr(recurring)}', document.getElementById('recurringPaidDate').value)" style="margin-top: 16px;"><i class="fas fa-check-circle"></i> Mark Current Period as Paid</button>
             </div>
         `;
+        modal.querySelector('.modal-close').addEventListener('click', () => {
+            modal.remove();
+            document.body.classList.remove('modal-open');
+        });
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                modal.remove();
+                document.body.classList.remove('modal-open');
+            }
+        });
         document.body.appendChild(modal);
         document.body.classList.add('modal-open');
     }
@@ -10611,6 +10865,7 @@ function processRecurringTransactions() {
     window.__recurringSystemTrackPaymentTiming = trackPaymentTiming;
     window.__recurringSystemUpdatePaymentStats = updatePaymentStats;
     window.__recurringSystemShowPaymentHistoryModal = showPaymentHistoryModal;
+    window.__recurringSystemShowRecurringPaymentModal = showRecurringPaymentModal;
     window.__recurringSystemMarkRecurringAsPaid = markRecurringAsPaid;
     window.__recurringSystemGetNextOccurrence = getNextOccurrence;
     window.__recurringSystemGetNextDueDateStr = getNextDueDateStr;
@@ -10629,6 +10884,7 @@ function processRecurringTransactions() {
     window.trackPaymentTiming = window.__recurringSystemTrackPaymentTiming;
     window.updatePaymentStats = window.__recurringSystemUpdatePaymentStats;
     window.showPaymentHistoryModal = window.__recurringSystemShowPaymentHistoryModal;
+    window.showRecurringPaymentModal = window.__recurringSystemShowRecurringPaymentModal;
     window.markRecurringAsPaid = window.__recurringSystemMarkRecurringAsPaid;
     window.getNextOccurrence = window.__recurringSystemGetNextOccurrence;
     window.getNextDueDateStr = window.__recurringSystemGetNextDueDateStr;

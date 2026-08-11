@@ -221,6 +221,8 @@
     display: flex;
     gap: 12px;
     justify-content: flex-end;
+    flex-wrap: wrap;
+    align-items: center;
 }
 
 .card-btn {
@@ -234,6 +236,13 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
+}
+
+.card-btn-premium {
+    min-width: 0;
+    flex: 1 1 120px;
+    justify-content: center;
+    white-space: nowrap;
 }
 
 .card-btn.edit {
@@ -309,6 +318,24 @@
     transition: transform 0.3s ease;
     box-shadow: 0 -5px 25px rgba(0, 0, 0, 0.2);
     border: 1px solid var(--gray-200);
+    overflow: hidden;
+}
+
+.recurring-modal-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+}
+
+.recurring-form {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-height: 0;
+    overflow-y: auto;
 }
 
 .recurring-modal-overlay.active .recurring-modal {
@@ -429,6 +456,16 @@
     border-top: 1px solid var(--gray-200);
     border-radius: 0 0 28px 28px;
     flex-shrink: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.recurring-modal-footer > button {
+    flex: 1 1 140px;
+    min-width: 0;
 }
 
 .modal-footer-buttons-row {
@@ -524,6 +561,11 @@
     .recurring-card-footer {
         padding: 10px 16px;
     }
+
+    .card-btn-premium {
+        padding: 8px 12px;
+        font-size: 0.72rem;
+    }
     
     .form-row-recurring {
         grid-template-columns: 1fr;
@@ -560,6 +602,21 @@
         width: 100%;
         justify-content: center;
     }
+
+    .recurring-card-footer {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .card-btn-label {
+        display: none;
+    }
+
+    .card-btn-premium {
+        width: 100%;
+        padding: 8px 10px;
+    }
     
     .amount-value {
         font-size: 1.2rem;
@@ -567,6 +624,8 @@
     
     .recurring-modal-footer {
         padding: 14px 16px;
+        flex-direction: column-reverse;
+        align-items: stretch;
     }
     
     .modal-footer-buttons-row {
@@ -577,6 +636,11 @@
     .btn-modal-save {
         padding: 12px 12px;
         font-size: 0.9rem;
+    }
+
+    .recurring-modal-footer > button {
+        width: 100%;
+        flex-basis: auto;
     }
 }
 
@@ -690,4 +754,270 @@
 @keyframes pulseGreen {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.7; }
+}
+
+/* The recurring form is created directly as #recurringModal in app.js.
+   Make that element the overlay so it is never inserted into document flow
+   at the bottom of the page. */
+#recurringModal.recurring-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10001;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    padding: 24px;
+    margin: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    background: rgba(15, 23, 42, 0.58);
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: blur(5px);
+    transform: none;
+}
+
+#recurringModal.recurring-modal.active {
+    display: flex !important;
+}
+
+#recurringModal.recurring-modal.active .recurring-modal-content {
+    animation: recurringModalEnter 0.22s ease-out both;
+}
+
+#recurringModal .recurring-modal-content {
+    display: flex;
+    flex: 0 1 620px;
+    flex-direction: column;
+    width: min(100%, 620px);
+    max-height: min(760px, calc(100dvh - 48px));
+    overflow: hidden;
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: 24px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+}
+
+#recurringModal .recurring-modal-header {
+    border-radius: 23px 23px 0 0;
+}
+
+#recurringModal .recurring-form {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+/* Current recurring form markup uses the shared form-group / form-row classes.
+   Scope its layout here so it does not inherit compact, inline form rules from
+   other screens. */
+#recurringModal .recurring-form {
+    gap: 18px;
+}
+
+#recurringModal .recurring-form .form-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    width: 100%;
+}
+
+#recurringModal .recurring-form .form-group,
+#recurringModal .recurring-form .form-row-full {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+}
+
+#recurringModal .recurring-form label {
+    margin: 0;
+    color: var(--gray-700);
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+#recurringModal .recurring-form input:not([type="checkbox"]),
+#recurringModal .recurring-form select {
+    width: 100%;
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    color: var(--gray-900);
+    background: var(--gray-100);
+    border: 1px solid var(--gray-200);
+    border-radius: 10px;
+    font: inherit;
+    outline: none;
+}
+
+#recurringModal .recurring-form input:not([type="checkbox"]):focus,
+#recurringModal .recurring-form select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.14);
+}
+
+#recurringModal .recurring-form .help {
+    color: var(--gray-500);
+    font-size: 0.75rem;
+    line-height: 1.35;
+}
+
+#recurringModal .checkbox-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-height: 28px;
+}
+
+#recurringModal .checkbox-wrapper input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--primary);
+    flex: 0 0 auto;
+}
+
+#recurringModal .checkbox-wrapper label {
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+#recurringModal .close-btn {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    place-items: center;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 1.15rem;
+    line-height: 1;
+}
+
+#recurringModal .close-btn:hover {
+    background: rgba(255, 255, 255, 0.28);
+}
+
+#recurringModal .recurring-modal-footer {
+    border-radius: 0 0 23px 23px;
+}
+
+#recurringModal #recurringFormStatus {
+    display: none;
+    margin: 0 24px 4px;
+    padding: 10px 12px;
+    color: var(--primary-dark);
+    background: rgba(124, 58, 237, 0.08);
+    border-radius: 10px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+#recurringModal.is-saving .recurring-form,
+#recurringModal.is-deleting .recurring-form {
+    pointer-events: none;
+    opacity: 0.68;
+}
+
+#recurringModal .btn-save:disabled,
+#recurringModal .btn-delete:disabled {
+    cursor: wait;
+    opacity: 0.78;
+    transform: none;
+    box-shadow: none;
+}
+
+@keyframes recurringModalEnter {
+    from { opacity: 0; transform: translateY(10px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Payment actions are a deliberate, centered pair rather than being pushed
+   toward one edge of the dialog. */
+#recurringPaymentModal .delete-confirmation-actions {
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 0;
+}
+
+#recurringPaymentModal .delete-confirmation-actions .btn-secondary,
+#recurringPaymentModal .delete-confirmation-actions .btn-primary {
+    min-width: 132px;
+    text-align: center;
+}
+
+#recurringPaymentModal .recurring-payment-status {
+    min-height: 20px;
+    margin-top: 10px;
+    color: var(--primary-dark);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-align: center;
+}
+
+#recurringPaymentModal.is-recording-payment .modal-content > :not(.delete-confirmation-actions):not(.recurring-payment-status) {
+    opacity: 0.68;
+}
+
+#recurringPaymentModal.is-recording-payment .modal-close {
+    cursor: wait;
+}
+
+@media (max-width: 520px) {
+    #recurringPaymentModal .delete-confirmation-actions {
+        flex-direction: column-reverse;
+        align-items: stretch;
+    }
+
+    #recurringPaymentModal .delete-confirmation-actions .btn-secondary,
+    #recurringPaymentModal .delete-confirmation-actions .btn-primary {
+        width: 100%;
+    }
+}
+
+@media (max-width: 600px) {
+    #recurringModal.recurring-modal {
+        align-items: center;
+        padding: 12px;
+    }
+
+    #recurringModal .recurring-modal-content {
+        max-height: calc(100dvh - 24px);
+        border-radius: 20px;
+    }
+
+    #recurringModal .recurring-modal-header {
+        padding: 16px 18px;
+        border-radius: 19px 19px 0 0;
+    }
+
+    #recurringModal .recurring-form {
+        padding: 18px;
+    }
+
+    #recurringModal .recurring-form .form-row {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+
+    #recurringModal .recurring-form {
+        gap: 14px;
+    }
+
+    #recurringModal .recurring-modal-footer {
+        padding: 12px 18px;
+        border-radius: 0 0 19px 19px;
+    }
 }
