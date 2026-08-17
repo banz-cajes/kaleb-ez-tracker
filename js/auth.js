@@ -1,208 +1,250 @@
-// js/auth.js
-// Authentication functions
+// ============================================
+// C4 SYSTEMS - Authentication
+// ============================================
 
-function getAuthService() {
-    if (window.auth) return window.auth;
-    if (window.firebase && firebase.apps && firebase.apps.length) {
-        window.auth = firebase.auth();
-        window.db = firebase.firestore();
-        return window.auth;
-    }
-    return null;
+let currentUser = null;
+let userRole = null;
+let permissions = {
+    canCreate: false,
+    canEdit: false,
+    canDelete: false,
+    canApprove: false,
+    canRelease: false,
+    canViewAll: false,
+    canManageUsers: false
+};
+
+// Session Timer
+let sessionTimer;
+let sessionTimerInterval;
+
+function resetSessionTimer() {
+    if (sessionTimer) clearTimeout(sessionTimer);
+    if (sessionTimerInterval) clearInterval(sessionTimerInterval);
+
+    const warning = document.getElementById('sessionWarning');
+    if (warning) warning.style.display = 'none';
+
+    sessionTimer = setTimeout(() => {
+        const warn = document.getElementById('sessionWarning');
+        if (warn) warn.style.display = 'flex';
+
+        let timeLeft = 300;
+        sessionTimerInterval = setInterval(() => {
+            timeLeft--;
+            const minutes = Math.floor(timeLeft / 60);
+            const seconds = timeLeft % 60;
+            const timerSpan = document.getElementById('sessionTimer');
+            if (timerSpan) timerSpan.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+            if (timeLeft <= 0) {
+                clearInterval(sessionTimerInterval);
+                forceLogout();
+            }
+        }, 1000);
+    }, 25 * 60 * 1000);
+
+    const logoutTimer = setTimeout(() => {
+        forceLogout();
+    }, 30 * 60 * 1000);
+
+    window.logoutTimer = logoutTimer;
 }
 
-function getDbService() {
-    if (window.db) return window.db;
-    if (window.firebase && firebase.apps && firebase.apps.length) {
-        window.auth = firebase.auth();
-        window.db = firebase.firestore();
-        return window.db;
-    }
-    return null;
+function extendSession() {
+    resetSessionTimer();
+    showToast('Session extended for another 30 minutes', 'success');
 }
 
-function setFormMessage(elementId, message, type = 'error') {
-    const messageEl = document.getElementById(elementId);
-    if (!messageEl) return;
-
-    messageEl.textContent = message;
-    messageEl.className = `form-message show ${type}`;
-}
-
-function clearFormMessage(elementId) {
-    const messageEl = document.getElementById(elementId);
-    if (!messageEl) return;
-
-    messageEl.textContent = '';
-    messageEl.className = 'form-message';
-}
-
-function setButtonLoading(button, isLoading, loadingText) {
-    if (!button) return;
-
-    if (isLoading) {
-        button.dataset.originalHtml = button.innerHTML;
-        button.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span><span>${loadingText}</span>`;
-        button.disabled = true;
-        button.setAttribute('aria-busy', 'true');
-    } else {
-        button.innerHTML = button.dataset.originalHtml || button.innerHTML;
-        button.disabled = false;
-        button.removeAttribute('aria-busy');
-        delete button.dataset.originalHtml;
-    }
-}
-
-function getFriendlyAuthError(error) {
-    switch (error?.code) {
-        case 'auth/invalid-email':
-            return 'Please enter a valid email address.';
-        case 'auth/user-not-found':
-        case 'auth/wrong-password':
-        case 'auth/invalid-credential':
-            return 'The email or password does not match our records.';
-        case 'auth/too-many-requests':
-            return 'Too many attempts. Please wait a few minutes and try again.';
-        case 'auth/network-request-failed':
-            return 'Network problem. Check your internet connection and try again.';
-        case 'auth/email-already-in-use':
-            return 'This email is already registered. Try signing in instead.';
-        case 'auth/weak-password':
-            return 'Password is too weak. Use at least 6 characters.';
-        default:
-            return error?.message || 'Something went wrong. Please try again.';
-    }
-}
-
-async function handleLogin() {
-    const authService = getAuthService();
-    const email = document.getElementById('loginEmail').value.trim();
-    const password = document.getElementById('loginPassword').value;
-    const rememberMe = document.getElementById('rememberMe')?.checked || false;
-
-    clearFormMessage('loginError');
-
-    if (!email || !password) {
-        setFormMessage('loginError', 'Please enter your email and password.', 'error');
-        return;
-    }
-
-    if (!authService) {
-        setFormMessage('loginError', 'Login service is still loading. Please refresh the page.', 'error');
-        return;
-    }
-
-    const btn = document.querySelector('#loginForm .btn');
-    setButtonLoading(btn, true, 'Signing in...');
-
+async function forceLogout() {
+    showToast('Session expired due to inactivity. Please login again.', 'warning');
     try {
-        const persistence = rememberMe ?
-            firebase.auth.Auth.Persistence.LOCAL :
-            firebase.auth.Auth.Persistence.SESSION;
-        await authService.setPersistence(persistence);
-        await authService.signInWithEmailAndPassword(email, password);
-        setFormMessage('loginError', 'Signed in. Loading your dashboard...', 'success');
-        window.location.href = 'index.html';
+        if (sessionTimer) clearTimeout(sessionTimer);
+        if (sessionTimerInterval) clearInterval(sessionTimerInterval);
+        if (window.logoutTimer) clearTimeout(window.logoutTimer);
+
+        await auth.signOut();
+        localStorage.removeItem('c4_current_user');
+        window.location.href = 'login.html';
     } catch (error) {
-        setFormMessage('loginError', getFriendlyAuthError(error), 'error');
-    } finally {
-        setButtonLoading(btn, false);
+        console.error('Logout error:', error);
+        window.location.href = 'login.html';
     }
 }
 
-async function handleSignup() {
-    const authService = getAuthService();
-    const dbService = getDbService();
-    const name = document.getElementById('signupName').value.trim();
-    const email = document.getElementById('signupEmail').value.trim();
-    const password = document.getElementById('signupPassword').value;
-    const confirmPassword = document.getElementById('signupConfirmPassword').value;
-
-    clearFormMessage('signupError');
-
-    if (!name) {
-        setFormMessage('signupError', 'Please enter your name.', 'error');
-        return;
-    }
-
-    if (!email) {
-        setFormMessage('signupError', 'Please enter your email.', 'error');
-        return;
-    }
-
-    if (password.length < 6) {
-        setFormMessage('signupError', 'Password must be at least 6 characters.', 'error');
-        return;
-    }
-
-    if (password !== confirmPassword) {
-        setFormMessage('signupError', 'Passwords do not match.', 'error');
-        return;
-    }
-
-    if (!authService || !dbService) {
-        setFormMessage('signupError', 'Signup service is still loading. Please refresh the page.', 'error');
-        return;
-    }
-
-    const btn = document.querySelector('#signupForm .btn');
-    setButtonLoading(btn, true, 'Creating account...');
-
-    try {
-        const userCredential = await authService.createUserWithEmailAndPassword(email, password);
-        setFormMessage('signupError', 'Saving your profile...', 'info');
-        await userCredential.user.updateProfile({ displayName: name });
-        await dbService.collection('users').doc(userCredential.user.uid).set({
-            email: email, name: name, createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-            transactions: [], goals: [], bills: [], monthlyBudget: 0, debtGoal: 0, savingsGoal: 0
+function setupActivityListeners() {
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click', 'mousemove'];
+    events.forEach(event => {
+        document.addEventListener(event, () => {
+            resetSessionTimer();
         });
-        await userCredential.user.sendEmailVerification();
-        setFormMessage('signupError', 'Account created. Loading your dashboard...', 'success');
-        window.location.href = 'index.html';
-    } catch (error) {
-        setFormMessage('signupError', getFriendlyAuthError(error), 'error');
-    } finally {
-        setButtonLoading(btn, false);
+    });
+}
+
+// Auth State Listener
+auth.onAuthStateChanged(async (user) => {
+    if (user) {
+        currentUser = user;
+        localStorage.setItem('c4_current_user', JSON.stringify({ uid: user.uid, email: user.email }));
+        try {
+            const userDoc = await db.collection('users').doc(user.uid).get();
+            if (userDoc.exists) {
+                userRole = userDoc.data().role;
+            } else {
+                userRole = 'viewer';
+                await db.collection('users').doc(user.uid).set({
+                    name: user.email.split('@')[0],
+                    email: user.email,
+                    role: userRole,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            }
+            
+            // ============================================
+            // FIXED PERMISSIONS - ALL USERS CAN VIEW DATA
+            // ============================================
+            permissions = {
+                canCreate: userRole === 'admin' || userRole === 'creator' || userRole === 'approver',
+                canEdit: userRole === 'admin' || userRole === 'creator',
+                canDelete: userRole === 'admin',
+                canApprove: userRole === 'admin' || userRole === 'approver',
+                canRelease: userRole === 'admin' || userRole === 'approver',
+                canViewAll: true,  // ALL roles can view all communications
+                canManageUsers: userRole === 'admin'
+            };
+            
+            // Keep a minimal, role-free directory record for direct chat.
+            try {
+                await db.collection('chat_profiles').doc(user.uid).set({
+                    name: user.email.split('@')[0],
+                    email: user.email,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+            } catch (profileError) {
+                console.warn('Unable to update chat profile:', profileError.message);
+            }
+            
+            // One administrator sign-in safely backfills the minimal chat directory
+            if (userRole === 'admin') {
+                try {
+                    await backfillChatProfiles();
+                } catch (profileError) {
+                    console.warn('Unable to backfill chat profiles:', profileError.message);
+                }
+            }
+            
+            updateUIForUser();
+            document.getElementById('appContainer').style.display = 'block';
+
+            // Initialize app
+            if (typeof initApp === 'function') {
+                initApp();
+            }
+            // Initialize chat (if chat module is available)
+            if (typeof initChat === 'function') {
+                initChat();
+            }
+            resetSessionTimer();
+            setupActivityListeners();
+        } catch (error) {
+            console.error('Error loading user permissions:', error);
+            showToast('Error loading user permissions: ' + error.message, 'error');
+        }
+    } else {
+        localStorage.removeItem('c4_current_user');
+        const isLoginPage = window.location.pathname.includes('login.html');
+        if (!isLoginPage && !sessionStorage.getItem('logout_in_progress')) {
+            window.location.href = 'login.html';
+        }
+    }
+});
+
+async function backfillChatProfiles() {
+    if (!db || userRole !== 'admin') return;
+    const users = await db.collection('users').get();
+    const profiles = await db.collection('chat_profiles').get();
+    const existing = new Set(profiles.docs.map(doc => doc.id));
+    const missingUsers = users.docs.filter(doc => !existing.has(doc.id));
+
+    for (let start = 0; start < missingUsers.length; start += 450) {
+        const batch = db.batch();
+        missingUsers.slice(start, start + 450).forEach(doc => {
+            const data = doc.data();
+            const email = data.email || '';
+            batch.set(db.collection('chat_profiles').doc(doc.id), {
+                name: data.name || email.split('@')[0] || 'User',
+                email,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        });
+        await batch.commit();
     }
 }
 
-async function showForgotPassword() {
-    const authService = getAuthService();
-    const emailInput = document.getElementById('loginEmail');
-    const email = emailInput.value.trim();
-
-    clearFormMessage('loginError');
-
-    if (!email) {
-        setFormMessage('loginError', 'Enter your email first, then tap Forgot Password again.', 'info');
-        emailInput.focus();
-        return;
+function updateUIForUser() {
+    document.getElementById('userName').textContent = currentUser?.email?.split('@')[0] || 'User';
+    document.getElementById('userAvatar').textContent = (currentUser?.email?.charAt(0) || 'U').toUpperCase();
+    
+    // Show/hide New Communication button based on permissions
+    const newCommBtn = document.getElementById('newCommBtn');
+    if (newCommBtn) {
+        newCommBtn.style.display = permissions.canCreate ? 'flex' : 'none';
     }
-
-    if (!authService) {
-        setFormMessage('loginError', 'Password reset is still loading. Please refresh the page.', 'error');
-        return;
+    
+    // Add role class to body for CSS targeting
+    document.body.classList.remove('role-admin', 'role-approver', 'role-creator', 'role-viewer');
+    document.body.classList.add(`role-${userRole}`);
+    
+    // Hide action buttons for viewers via CSS class
+    if (userRole === 'viewer') {
+        document.querySelectorAll('.action-btn.approve, .action-btn.delete, .action-btn.release, .remarks-edit-btn').forEach(btn => {
+            btn.style.display = 'none';
+        });
+        // Hide bulk action buttons
+        document.querySelectorAll('.bulk-actions .btn-danger, .bulk-actions .btn-success, .bulk-actions .btn-info').forEach(btn => {
+            btn.style.display = 'none';
+        });
     }
+    
+    const roleBadge = document.querySelector('#userRole .role-badge');
+    if (roleBadge) {
+        const displayRole = userRole?.charAt(0).toUpperCase() + userRole?.slice(1) || 'Viewer';
+        roleBadge.className = `role-badge ${userRole}`;
+        roleBadge.textContent = displayRole;
+    }
+}
+
+// Logout Function
+window.logout = async () => {
+    const result = await Swal.fire({
+        title: 'Logout?',
+        text: 'Are you sure?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        confirmButtonText: 'Yes',
+        cancelButtonText: 'No'
+    });
+
+    if (!result.isConfirmed) return;
+
+    Swal.fire({
+        title: 'Logging out...',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+    });
 
     try {
-        setFormMessage('loginError', 'Sending password reset email...', 'info');
-        await authService.sendPasswordResetEmail(email);
-        setFormMessage('loginError', 'Password reset email sent. Please check your inbox.', 'success');
+        await auth.signOut();
+        localStorage.removeItem('c4_current_user');
+        Swal.fire({
+            icon: 'success',
+            title: 'Logged out!',
+            timer: 1000,
+            showConfirmButton: false
+        });
+        setTimeout(() => window.location.href = 'login.html', 1000);
     } catch (error) {
-        setFormMessage('loginError', getFriendlyAuthError(error), 'error');
+        Swal.fire('Error', error.message, 'error');
     }
-}
-
-function showToast(message, type) {
-    // Simple toast implementation for login page
-    const toast = document.createElement('div');
-    toast.textContent = message;
-    toast.style.cssText = `
-        position: fixed; bottom: 20px; left: 20px; right: 20px;
-        background: ${type === 'error' ? '#ef4444' : '#10b981'};
-        color: white; padding: 12px 20px; border-radius: 12px;
-        text-align: center; z-index: 10000; animation: fadeIn 0.3s ease;
-    `;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
-}
+};

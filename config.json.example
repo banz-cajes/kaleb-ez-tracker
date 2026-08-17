@@ -1,0 +1,10 @@
+{
+  "apiKey": "YOUR_NEW_API_KEY_HERE",
+  "authDomain": "comms-monitoring.firebaseapp.com",
+  "databaseURL": "https://comms-monitoring-default-rtdb.firebaseio.com",
+  "projectId": "comms-monitoring",
+  "storageBucket": "comms-monitoring.firebasestorage.app",
+  "messagingSenderId": "178413618862",
+  "appId": "1:178413618862:web:291d6f4bdba871a058cf3f",
+  "measurementId": "G-DXEDZGT3GW"
+}

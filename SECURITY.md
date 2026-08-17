@@ -1,21 +1,24 @@
 # Security Policy
 
-## Supported Versions
+## Before publishing or deploying
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+1. Deploy the committed Firestore and Storage rules:
+   ```powershell
+   firebase deploy --only firestore:rules,firestore:indexes,storage
+   ```
+2. In Firebase Authentication, enable only the sign-in providers the app uses and configure authorised domains.
+3. Restrict the Firebase Web API key to your production HTTP referrers and only the Firebase APIs required by this app.
+4. Enable multi-factor authentication for every administrator account.
+5. Enable Firebase App Check for Firestore, Authentication, and Storage before production enforcement.
+6. Confirm that `config.js`, `config.json`, `.env*`, and Firebase debug logs are not staged for commit.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+## Repository safeguards
 
-## Reporting a Vulnerability
+- GitHub CodeQL runs on pull requests, pushes to `main`, and weekly.
+- Local configuration files are ignored. Use `config.js.example` as the template.
+- Firebase client configuration is not a password; the protection for Firestore data is Firebase Authentication, Security Rules, App Check, and API-key restrictions.
+- Never place service-account keys, private keys, passwords, or access tokens in this repository.
 
-Use this section to tell people how to report a vulnerability.
+## Reporting a vulnerability
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+Send security reports privately to the project administrator. Do not include sensitive details in public issues.
