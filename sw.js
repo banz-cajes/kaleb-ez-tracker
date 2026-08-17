@@ -1,99 +1,149 @@
-// ============================================
-// C4 SYSTEMS - Service Worker
-// ============================================
+// ===== KALEB SERVICE WORKER - CLEAN WORKING VERSION =====
+const CACHE_NAME = 'kaleb-v6';
+const OFFLINE_URL = '/offline.html';
 
-const CACHE_NAME = 'c4-systems-v2';
-const urlsToCache = [
+// Static assets to cache
+const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/login.html',
-  '/css/style.css',
-  '/css/components.css',
-  '/css/dark-theme.css',
-  '/js/utils.js',
-  '/js/firebase-init.js',
-  '/js/auth.js',
-  '/js/settings.js',
-  '/js/analytics.js',
-  '/js/compliance.js',
+  '/offline.html',
+  '/css/styles.css',
   '/js/app.js',
-  '/js/ui.js',
-  '/js/chat.js',
-  '/manifest.json',
-  '/logo.png'
+  '/js/config.js',
+  '/js/analytics.js',
+  '/js/notifications.js',
+  '/js/auth.js',
+  '/manifest.json'
 ];
 
-// Install event - cache assets
-self.addEventListener('install', event => {
+// Install event - cache static assets
+self.addEventListener('install', (event) => {
+  console.log('✅ Service Worker installing...');
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => {
-        console.log('Opened cache');
-        return cache.addAll(urlsToCache);
+      .then(async (cache) => {
+        // Cache each asset individually to prevent one failure from breaking all
+        for (const asset of STATIC_ASSETS) {
+          try {
+            await cache.add(asset);
+            console.log('Cached:', asset);
+          } catch (err) {
+            console.log('Failed to cache:', asset, err);
+          }
+        }
       })
-      .catch(err => console.warn('Cache install error:', err))
+      .catch(err => console.log('Cache open error:', err))
   );
+  // Activate immediately
   self.skipWaiting();
 });
 
 // Activate event - clean old caches
-self.addEventListener('activate', event => {
+self.addEventListener('activate', (event) => {
+  console.log('✅ Service Worker activating...');
   event.waitUntil(
-    caches.keys().then(cacheNames => {
+    caches.keys().then((cacheNames) => {
       return Promise.all(
-        cacheNames.map(cacheName => {
-          if (cacheName !== CACHE_NAME) {
-            console.log('Deleting old cache:', cacheName);
-            return caches.delete(cacheName);
+        cacheNames.map((cache) => {
+          if (cache !== CACHE_NAME) {
+            console.log('🗑️ Deleting old cache:', cache);
+            return caches.delete(cache);
           }
         })
       );
-    }).then(() => self.clients.claim())
+    }).then(() => {
+      console.log('✅ Service Worker ready to control clients');
+      return self.clients.claim();
+    })
   );
 });
 
-// Fetch event - serve from cache, fallback to network
-self.addEventListener('fetch', event => {
-  // Skip Firebase API calls and external CDNs
-  if (event.request.url.includes('firebase') || 
-      event.request.url.includes('googleapis') ||
-      event.request.url.includes('gstatic') ||
-      event.request.url.includes('cdnjs') ||
-      event.request.url.includes('jsdelivr')) {
+// Helper: Check if request should be skipped (not cached)
+function shouldSkipFetch(url) {
+  // Skip chrome extensions and other browser extensions
+  if (url.startsWith('chrome-extension:') ||
+      url.startsWith('chrome-devtools:') ||
+      url.startsWith('edge:') ||
+      url.startsWith('moz-extension:') ||
+      url.startsWith('about:') ||
+      url.startsWith('data:') ||
+      url.startsWith('blob:')) {
+    return true;
+  }
+  
+  // Skip Firebase/Firestore (always fresh)
+  if (url.includes('firestore.googleapis.com') ||
+      url.includes('firebase') ||
+      url.includes('googleapis.com') ||
+      url.includes('firebaseapp.com')) {
+    return true;
+  }
+  
+  return false;
+}
+
+// Fetch event - smart caching strategy
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  const url = request.url;
+  
+  // Skip unsupported requests
+  if (shouldSkipFetch(url)) {
     return;
   }
-
-  event.respondWith(
-    caches.match(event.request)
-      .then(response => {
-        // Cache hit - return response
-        if (response) {
+  
+  // Handle navigation requests (HTML pages)
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          // Cache the page for offline use
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, responseClone);
+          });
           return response;
+        })
+        .catch(async () => {
+          // Return offline page when offline
+          const cachedResponse = await caches.match(OFFLINE_URL);
+          return cachedResponse || new Response('You are offline', { 
+            status: 503,
+            headers: { 'Content-Type': 'text/html' }
+          });
+        })
+    );
+    return;
+  }
+  
+  // For static assets (CSS, JS, etc.) - cache first, then network
+  event.respondWith(
+    caches.match(request)
+      .then((cachedResponse) => {
+        if (cachedResponse) {
+          // Return cached version
+          return cachedResponse;
         }
         
-        // Cache miss - fetch from network
-        return fetch(event.request)
-          .then(response => {
-            // Check if valid response
-            if (!response || response.status !== 200 || response.type !== 'basic') {
-              return response;
-            }
-            
-            // Clone response for caching
-            const responseToCache = response.clone();
-            
-            caches.open(CACHE_NAME)
-              .then(cache => {
-                cache.put(event.request, responseToCache);
-              })
-              .catch(err => console.warn('Cache put error:', err));
-            
-            return response;
-          })
-          .catch(() => {
-            // Offline fallback
-            return caches.match('/index.html');
-          });
+        // Not in cache, fetch from network
+        return fetch(request).then((networkResponse) => {
+          // Only cache successful responses
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(request, responseClone);
+            });
+          }
+          return networkResponse;
+        });
+      })
+      .catch(() => {
+        // Fallback for images
+        if (request.destination === 'image') {
+          return new Response('', { status: 404 });
+        }
+        return new Response('Resource not available offline', { status: 404 });
       })
   );
 });
