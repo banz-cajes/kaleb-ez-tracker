@@ -81,9 +81,10 @@ let editGoalIndex = -1;
 let editBillIndex = -1;
 let editRecurringIndex = -1;
 
-// ===== 30 EXPENSE CATEGORIES =====
+// ===== EXPENSE CATEGORIES =====
 const expenseCats = [
-    "🍔 Food & Groceries",
+    "🍔 Food",
+    "🛒 Groceries",
     "🏠 Rent / Mortgage",
     "⚡ Electricity Bill",
     "💧 Water Bill",
@@ -91,14 +92,17 @@ const expenseCats = [
     "💸 Loan to Friend",
     "🤝 Pautang (Credit)",
     "📱 Phone Bill",
+    "📲 Mobile Load",
     "🍱 School Allowance",
     "🚗 Gas / Fuel",
+    "🏍️ Motor Maintenance",
     "🚆 Public Transport",
     "👶 Baby Kaleb Needs",
     "💊 Health & Medicine",
     "📚 Education / School",
     "💸 Transfer to GCash",
     "📚 Student Needs",
+    "🧰 Needs",
     "🏦 Bank Transfer",
     "🛍️ Shopping",
     "🍽️ Dining Out",
@@ -389,7 +393,7 @@ async function loadUserData() {
 
         if (doc.exists) {
             const data = doc.data();
-            window.transactions = data.transactions || [];
+            window.transactions = filterDeletedTransactions(data.transactions || [], data);
             window.budgetLimit = data.monthlyBudget || 0;
             window.debtGoal = data.debtGoal || 0;
             window.savingsGoal = data.savingsGoal || 0;
@@ -460,7 +464,7 @@ localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
         if (cached) {
             try {
                 const data = JSON.parse(cached);
-                window.transactions = data.transactions || [];
+                window.transactions = filterDeletedTransactions(data.transactions || []);
                 window.budgetLimit = data.budgetLimit || 0;
                 window.debtGoal = data.debtGoal || 0;
                 window.savingsGoal = data.savingsGoal || 0;
@@ -491,6 +495,26 @@ localStorage.setItem('cajesData_' + window.currentUser.uid, JSON.stringify({
 let unsubscribeRealtime = null;
 let isSyncing = false;
 
+function getDeletedTransactionIds(serverData = null) {
+    const deletedIds = new Set(serverData?._deletedTransactions || []);
+
+    if (window.currentUser) {
+        try {
+            const localDeleted = JSON.parse(localStorage.getItem(`_deleted_transactions_${window.currentUser.uid}`) || '[]');
+            localDeleted.forEach((id) => deletedIds.add(id));
+        } catch (error) {
+            console.warn('Could not read deleted transaction markers:', error);
+        }
+    }
+
+    return deletedIds;
+}
+
+function filterDeletedTransactions(transactions, serverData = null) {
+    const deletedIds = getDeletedTransactionIds(serverData);
+    return (transactions || []).filter((transaction) => transaction?.id && !deletedIds.has(transaction.id));
+}
+
 // Set up real-time listener for transactions
 function setupRealtimeSync() {
     if (!window.currentUser || !window.db) {
@@ -514,8 +538,8 @@ function setupRealtimeSync() {
 
             if (doc.exists) {
                 const data = doc.data();
-                const serverTransactions = data.transactions || [];
-                const localTransactions = window.transactions || [];
+                const serverTransactions = filterDeletedTransactions(data.transactions || [], data);
+                const localTransactions = filterDeletedTransactions(window.transactions || [], data);
 
                 const serverHash = JSON.stringify(serverTransactions);
                 const localHash = JSON.stringify(localTransactions);
@@ -622,7 +646,7 @@ async function manualSync() {
         const doc = await window.db.collection('users').doc(window.currentUser.uid).get();
         if (doc.exists) {
             const data = doc.data();
-            const serverTransactions = data.transactions || [];
+            const serverTransactions = filterDeletedTransactions(data.transactions || [], data);
             const serverHash = JSON.stringify(serverTransactions);
             const localHash = JSON.stringify(window.transactions);
 
@@ -650,6 +674,8 @@ async function manualSync() {
 async function saveToFirebase() {
     if (!window.currentUser) return false;
 
+    window.transactions = filterDeletedTransactions(window.transactions || []);
+
     // If offline, save to localStorage only
     if (!navigator.onLine) {
         if (window.sileo) window.sileo.warning('You are offline. Data saved locally.', 'Offline Mode');
@@ -676,7 +702,7 @@ async function saveToFirebase() {
         // Get current cloud data
         const doc = await db.collection('users').doc(userId).get();
         let cloudData = doc.exists ? doc.data() : {};
-        let cloudTransactions = cloudData.transactions || [];
+        let cloudTransactions = filterDeletedTransactions(cloudData.transactions || [], cloudData);
         
         // Get local transaction IDs
         const localIds = new Set(window.transactions.map(t => t.id));
@@ -1159,9 +1185,6 @@ function deleteTransactionById(txId) {
     // Store the transaction for reference
     const deletedTx = window.transactions[index];
     
-    // EXTRA: Check if this is a savings transaction
-    const isSavings = deletedTx.type === 'savings';
-
     showDeleteConfirmation({
         title: 'Delete transaction?',
         message: `This permanently removes the ${deletedTx.type} transaction for ${formatCurrency(deletedTx.amount)} in ${deletedTx.category} on ${formatDate(deletedTx.date)}.`,
@@ -1169,6 +1192,7 @@ function deleteTransactionById(txId) {
     }).then((confirmed) => {
         if (!confirmed) return;
         window._deletingTransactions.add(txId);
+        clearAllTransactionCaches(txId);
         
         // 1. Remove from local array immediately
         window.transactions.splice(index, 1);
@@ -1200,37 +1224,25 @@ function deleteTransactionById(txId) {
         // 4. Render immediately (instant feedback)
         render();
         
-        // 5. Update savings goal display if needed
-        if (isSavings && typeof updateSavingsGoal === 'function') {
-            updateSavingsGoal();
-        }
-        
         if (window.sileo) {
             window.sileo.success(`${deletedTx.type.charAt(0).toUpperCase() + deletedTx.type.slice(1)} deleted!`, 'Deleted');
         }
         
-        // 6. CLEAR ALL CACHES - This is critical!
-        clearAllTransactionCaches(txId);
-        
-        // 7. Save to Firebase in background with explicit deletion
+        // Save to Firebase in background with explicit deletion
         if (typeof saveToFirebase === 'function') {
             // Call the enhanced save function
             saveToFirebaseWithDeletion(txId)
-                .then(() => {
-                    console.log('✅ Deletion synced to Firebase');
+                .then((synced) => {
+                    if (synced) {
+                        console.log('✅ Deletion synced to Firebase');
+                    } else if (window.sileo) {
+                        window.sileo.warning('Deleted locally. Cloud sync will retry when connected.', 'Sync Pending');
+                    }
                     window._deletingTransactions.delete(txId);
                 })
                 .catch((error) => {
-                    console.warn('Firebase delete failed, restoring:', error);
-                    // Only restore if transaction doesn't exist already
-                    const exists = window.transactions.some(t => t.id === txId);
-                    if (!exists && !window._restoringTransaction) {
-                        window._restoringTransaction = true;
-                        window.transactions.splice(index, 0, deletedTx);
-                        render();
-                        if (window.sileo) window.sileo.error('Delete failed - restored', 'Error');
-                        window._restoringTransaction = false;
-                    }
+                    console.warn('Firebase delete is pending:', error);
+                    if (window.sileo) window.sileo.warning('Deleted locally. Cloud sync will retry when connected.', 'Sync Pending');
                     window._deletingTransactions.delete(txId);
                 });
         } else {
@@ -1298,6 +1310,10 @@ function clearAllTransactionCaches(txId) {
         }
     } catch (e) {
         console.warn('Could not clear retry queue:', e);
+    }
+
+    if (window.UnifiedOfflineManager?.retryQueue) {
+        window.UnifiedOfflineManager.retryQueue = window.UnifiedOfflineManager.retryQueue.filter((item) => item.data?.id !== txId);
     }
     
     // 4. Clear Unified Offline Manager backup
@@ -1372,7 +1388,7 @@ async function saveToFirebaseWithDeletion(txId) {
         // Get current cloud data
         const doc = await db.collection('users').doc(userId).get();
         let cloudData = doc.exists ? doc.data() : {};
-        let cloudTransactions = cloudData.transactions || [];
+        let cloudTransactions = filterDeletedTransactions(cloudData.transactions || [], cloudData);
         
         // Remove the deleted transaction from cloud
         const updatedCloudTransactions = cloudTransactions.filter(t => t.id !== txId);
@@ -1476,10 +1492,9 @@ function deleteCurrentTransaction() {
     }
 
     const deletedTx = window.transactions[index];
-    const isSavings = deletedTx.type === 'savings';
-
     if (confirm(`Delete this ${deletedTx.type}?\n\n${deletedTx.category}\n${formatCurrency(deletedTx.amount)}`)) {
         window._deletingTransactions.add(editingId);
+        clearAllTransactionCaches(editingId);
         
         // 1. Remove from array immediately
         window.transactions.splice(index, 1);
@@ -1512,19 +1527,11 @@ function deleteCurrentTransaction() {
         render();
         window.editIndex = -1;
         
-        // 5. Update savings goal if needed
-        if (isSavings && typeof updateSavingsGoal === 'function') {
-            updateSavingsGoal();
-        }
-        
         if (window.sileo) {
             window.sileo.success(`${deletedTx.type} deleted!`, 'Deleted');
         }
         
-        // 6. Clear all caches
-        clearAllTransactionCaches(editingId);
-        
-        // 7. Save to Firebase with deletion
+        // Save to Firebase with deletion
         if (typeof saveToFirebaseWithDeletion === 'function') {
             saveToFirebaseWithDeletion(editingId)
                 .catch((error) => {
@@ -1551,7 +1558,7 @@ async function forceSyncAfterDeletion() {
         
         if (doc.exists) {
             const data = doc.data();
-            const cloudTransactions = data.transactions || [];
+            const cloudTransactions = filterDeletedTransactions(data.transactions || [], data);
             
             // Get local IDs
             const localIds = new Set(window.transactions.map(t => t.id));
@@ -3073,7 +3080,7 @@ function restoreFromBackup() {
     if (confirm('Restore from backup? Current data will be replaced.')) {
         try {
             const data = JSON.parse(backup);
-            window.transactions = data.transactions || [];
+            window.transactions = filterDeletedTransactions(data.transactions || [], data);
             window.budgetLimit = data.budgetLimit || 0;
             window.debtGoal = data.debtGoal || 0;
             window.savingsGoal = data.savingsGoal || 0;
@@ -3094,7 +3101,7 @@ function restoreFromFile(input) {
     reader.onload = (e) => {
         try {
             const data = JSON.parse(e.target.result);
-            window.transactions = data.transactions || [];
+            window.transactions = filterDeletedTransactions(data.transactions || [], data);
             window.budgetLimit = data.budgetLimit || 0;
             window.debtGoal = data.debtGoal || 0;
             window.savingsGoal = data.savingsGoal || 0;
@@ -3296,7 +3303,144 @@ function initializeApp() {
     if (typeof renderRecurringTransactions === 'function') {
         setTimeout(renderRecurringTransactions, 500);
     }
+
+    initializeMobileDashboardLayout();
 }
+
+// ===== MOBILE DASHBOARD LAYOUT =====
+function getDashboardLayoutStorageKey() {
+    return `kaleb_dashboard_layout_${window.currentUser?.uid || 'device'}`;
+}
+
+function getDashboardLayoutGroups() {
+    return Array.from(document.querySelectorAll('#dashboardView [data-layout-group]'));
+}
+
+function saveMobileDashboardLayout() {
+    const layout = {};
+    getDashboardLayoutGroups().forEach((group) => {
+        layout[group.dataset.layoutGroup] = Array.from(group.querySelectorAll(':scope > [data-dashboard-card]'))
+            .map((card) => card.dataset.dashboardCard);
+    });
+    localStorage.setItem(getDashboardLayoutStorageKey(), JSON.stringify(layout));
+}
+
+function restoreMobileDashboardLayout() {
+    let layout;
+    try {
+        layout = JSON.parse(localStorage.getItem(getDashboardLayoutStorageKey()) || '{}');
+    } catch (error) {
+        console.warn('Could not restore dashboard layout:', error);
+        return;
+    }
+
+    getDashboardLayoutGroups().forEach((group) => {
+        const savedOrder = layout[group.dataset.layoutGroup];
+        if (!Array.isArray(savedOrder)) return;
+        const cards = new Map(Array.from(group.querySelectorAll(':scope > [data-dashboard-card]'))
+            .map((card) => [card.dataset.dashboardCard, card]));
+        savedOrder.forEach((cardId) => {
+            const card = cards.get(cardId);
+            if (card) group.appendChild(card);
+        });
+    });
+}
+
+function updateDashboardLayoutControls() {
+    getDashboardLayoutGroups().forEach((group) => {
+        const cards = Array.from(group.querySelectorAll(':scope > [data-dashboard-card]'));
+        cards.forEach((card, index) => {
+            const upButton = card.querySelector('[data-layout-move="up"]');
+            const downButton = card.querySelector('[data-layout-move="down"]');
+            if (upButton) upButton.disabled = index === 0;
+            if (downButton) downButton.disabled = index === cards.length - 1;
+        });
+    });
+}
+
+function moveDashboardCard(button, direction, event) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const card = button.closest('[data-dashboard-card]');
+    const group = card?.parentElement;
+    if (!card || !group) return;
+
+    const cards = Array.from(group.querySelectorAll(':scope > [data-dashboard-card]'));
+    const currentIndex = cards.indexOf(card);
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= cards.length) return;
+
+    if (direction === 'up') group.insertBefore(card, cards[targetIndex]);
+    else group.insertBefore(cards[targetIndex], card);
+
+    saveMobileDashboardLayout();
+    updateDashboardLayoutControls();
+}
+
+function toggleDashboardLayoutEditing() {
+    const dashboard = document.getElementById('dashboardView');
+    if (!dashboard) return;
+    setDashboardLayoutEditing(!dashboard.classList.contains('dashboard-layout-editing'));
+}
+
+function setDashboardLayoutEditing(isEditing) {
+    const dashboard = document.getElementById('dashboardView');
+    if (!dashboard) return;
+    dashboard.classList.toggle('dashboard-layout-editing', isEditing);
+
+    let doneButton = document.getElementById('dashboardLayoutDone');
+    if (isEditing && !doneButton) {
+        doneButton = document.createElement('button');
+        doneButton.id = 'dashboardLayoutDone';
+        doneButton.className = 'dashboard-layout-done';
+        doneButton.type = 'button';
+        doneButton.innerHTML = '<i class="fas fa-check"></i> Save layout';
+        doneButton.addEventListener('click', finishDashboardLayoutEditing);
+        document.body.appendChild(doneButton);
+    } else if (!isEditing) {
+        doneButton?.remove();
+    }
+
+    updateDashboardLayoutControls();
+}
+
+function openDashboardLayoutEditor() {
+    switchView('dashboard');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(() => setDashboardLayoutEditing(true), 100);
+}
+
+function finishDashboardLayoutEditing() {
+    saveMobileDashboardLayout();
+    setDashboardLayoutEditing(false);
+    if (window.sileo) window.sileo.success('Dashboard layout saved', 'Saved');
+}
+
+function initializeMobileDashboardLayout() {
+    getDashboardLayoutGroups().forEach((group) => {
+        group.querySelectorAll(':scope > [data-dashboard-card]').forEach((card) => {
+            if (card.querySelector(':scope > .dashboard-card-controls')) return;
+            const controls = document.createElement('div');
+            controls.className = 'dashboard-card-controls';
+            controls.setAttribute('aria-label', 'Reorder card');
+            controls.innerHTML = `
+                <button type="button" data-layout-move="up" aria-label="Move card up" onclick="moveDashboardCard(this, 'up', event)"><i class="fas fa-arrow-up"></i></button>
+                <button type="button" data-layout-move="down" aria-label="Move card down" onclick="moveDashboardCard(this, 'down', event)"><i class="fas fa-arrow-down"></i></button>
+            `;
+            card.appendChild(controls);
+        });
+    });
+
+    restoreMobileDashboardLayout();
+    updateDashboardLayoutControls();
+}
+
+document.addEventListener('DOMContentLoaded', initializeMobileDashboardLayout);
+
+window.toggleDashboardLayoutEditing = toggleDashboardLayoutEditing;
+window.moveDashboardCard = moveDashboardCard;
+window.openDashboardLayoutEditor = openDashboardLayoutEditor;
+window.finishDashboardLayoutEditing = finishDashboardLayoutEditing;
 
 function initializeMonthFilter() {
     const monthFilter = document.getElementById('monthFilter');
@@ -3330,7 +3474,7 @@ window.recoverFromFirebase = async function () {
         const doc = await window.db.collection('users').doc(window.currentUser.uid).get();
         if (doc.exists) {
             const data = doc.data();
-            window.transactions = data.transactions || [];
+            window.transactions = filterDeletedTransactions(data.transactions || [], data);
             window.goals = data.goals || [];
             window.bills = data.bills || [];
             window.recurringTransactions = data.recurringTransactions || [];
@@ -7044,6 +7188,10 @@ function initBottomTabs() {
 
 // Updated switchView function
 function switchView(viewName) {
+    if (viewName !== 'dashboard' && document.getElementById('dashboardView')?.classList.contains('dashboard-layout-editing')) {
+        setDashboardLayoutEditing(false);
+    }
+
     // Update views
     const views = ['dashboardView', 'transactionsView', 'analyticsView', 'goalsView', 'billsView', 'settingsView', 'householdView'];
     views.forEach(view => {
@@ -7319,6 +7467,7 @@ async init() {
         
         backupToLocalStorage() {
             if (!window.currentUser) return;
+            window.transactions = filterDeletedTransactions(window.transactions || []);
             const backup = {
                 transactions: window.transactions || [],
                 recurringTransactions: window.recurringTransactions || [],
@@ -7338,7 +7487,7 @@ async init() {
             if (!backup) return false;
             try {
                 const data = JSON.parse(backup);
-                if (data.transactions) window.transactions = data.transactions;
+                if (data.transactions) window.transactions = filterDeletedTransactions(data.transactions);
                 if (data.recurringTransactions) window.recurringTransactions = data.recurringTransactions;
                 if (data.budgetLimit !== undefined) window.budgetLimit = data.budgetLimit;
                 if (data.debtGoal !== undefined) window.debtGoal = data.debtGoal;
@@ -7367,7 +7516,10 @@ async init() {
             
             const userRef = window.db.collection('users').doc(window.currentUser.uid);
             const doc = await userRef.get();
-            let existing = doc.exists ? (doc.data().transactions || []) : [];
+            const serverData = doc.exists ? doc.data() : {};
+            const deletedIds = getDeletedTransactionIds(serverData);
+            let existing = filterDeletedTransactions(serverData.transactions || [], serverData);
+            transactions = (transactions || []).filter((transaction) => transaction?.id && !deletedIds.has(transaction.id));
             
             const existingIds = new Set(existing.map(t => t.id));
             const newTx = transactions.filter(t => t.id && !existingIds.has(t.id));
@@ -7523,7 +7675,9 @@ async init() {
                 const doc = await window.db.collection('users').doc(window.currentUser.uid).get();
                 if (doc.exists) {
                     const data = doc.data();
-                    const cloudTx = data.transactions || [];
+                    const deletedIds = getDeletedTransactionIds(data);
+                    const cloudTx = filterDeletedTransactions(data.transactions || [], data);
+                    localTx = localTx.filter((transaction) => transaction?.id && !deletedIds.has(transaction.id));
                     
                     // Create sets for comparison
                     const localIds = new Set(localTx.map(t => t.id));
@@ -7562,11 +7716,11 @@ async init() {
             } catch (error) {
                 console.warn('Firebase load failed, using local backup:', error);
                 // If Firebase fails, fall back to local backup
-                window.transactions = localTx;
+                window.transactions = filterDeletedTransactions(localTx);
             }
         } else {
             // If offline, use local backup
-            window.transactions = localTx;
+            window.transactions = filterDeletedTransactions(localTx);
         }
         
         // Process and auto-generate recurring transactions
@@ -7593,6 +7747,7 @@ async init() {
     
     // Replace saveToFirebase
     window.saveToFirebase = async function() {
+        window.transactions = filterDeletedTransactions(window.transactions || []);
         UnifiedOfflineManager.backupToLocalStorage();
         
         if (navigator.onLine && window.currentUser && window.db) {
@@ -10260,9 +10415,15 @@ function getPremiumRecurringStatus(recurring) {
                             <i class="${getTypeIcon(recurring.type)}" style="color: ${typeColor}; background: ${typeColor}10;"></i>
                             <h4>${escapeHtml(recurring.name)}</h4>
                         </div>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <div class="status-badge-modern status-${status.type}">
-                                <i class="fas ${status.icon}"></i> ${status.text}
+                        <div class="recurring-actions">
+                            <button class="recurring-actions-trigger" type="button" aria-label="Actions for ${escapeHtml(recurring.name)}" aria-haspopup="menu" aria-expanded="false" aria-controls="recurring-actions-${actualIndex}" onclick="toggleRecurringActionsMenu(this, event)">
+                                <i class="fas fa-ellipsis-v" aria-hidden="true"></i>
+                            </button>
+                            <div class="recurring-actions-menu" id="recurring-actions-${actualIndex}" role="menu" hidden>
+                                <button type="button" role="menuitem" onclick="closeRecurringActionsMenus(); editRecurringTransaction(${actualIndex})"><i class="fas fa-edit" aria-hidden="true"></i><span>Edit</span></button>
+                                <button type="button" role="menuitem" onclick="closeRecurringActionsMenus(); showRecurringPaymentModal(window.recurringTransactions[${actualIndex}].id)"><i class="fas fa-check-circle" aria-hidden="true"></i><span>Paid</span></button>
+                                <button type="button" role="menuitem" onclick="closeRecurringActionsMenus(); showPaymentHistoryModal(window.recurringTransactions[${actualIndex}].id)"><i class="fas fa-chart-line" aria-hidden="true"></i><span>History</span></button>
+                                <button class="recurring-actions-delete" type="button" role="menuitem" onclick="closeRecurringActionsMenus(); deleteRecurringTransaction(${actualIndex})"><i class="fas fa-trash" aria-hidden="true"></i><span>Delete</span></button>
                             </div>
                         </div>
                     </div>
@@ -10291,12 +10452,6 @@ function getPremiumRecurringStatus(recurring) {
                             <span class="amount-value-premium">${formatCurrency(recurring.amount)}</span>
                         </div>
                     </div>
-                    <div class="recurring-card-footer">
-                        <button class="card-btn-premium card-btn-edit" title="Edit recurring transaction" aria-label="Edit recurring transaction" onclick="editRecurringTransaction(${actualIndex})"><i class="fas fa-edit"></i><span class="card-btn-label">Edit</span></button>
-                        <button class="card-btn-premium card-btn-paid" title="Record payment" aria-label="Record payment" onclick="showRecurringPaymentModal('${recurring.id}')"><i class="fas fa-check-circle"></i><span class="card-btn-label">Paid</span></button>
-                        <button class="card-btn-premium card-btn-history" title="View payment history" aria-label="View payment history" onclick="showPaymentHistoryModal('${recurring.id}')"><i class="fas fa-chart-line"></i><span class="card-btn-label">History</span></button>
-                        <button class="card-btn-premium card-btn-delete" title="Delete recurring transaction" aria-label="Delete recurring transaction" onclick="deleteRecurringTransaction(${actualIndex})"><i class="fas fa-trash"></i><span class="card-btn-label">Delete</span></button>
-                    </div>
                 </div>
             `;
         });
@@ -10304,6 +10459,41 @@ function getPremiumRecurringStatus(recurring) {
         container.innerHTML = html;
         updateRecurringStatsBar();
     }
+
+    function closeRecurringActionsMenus(exceptMenu = null) {
+        document.querySelectorAll('.recurring-actions-menu:not([hidden])').forEach((menu) => {
+            if (menu === exceptMenu) return;
+            menu.hidden = true;
+            const trigger = menu.parentElement?.querySelector('.recurring-actions-trigger');
+            if (trigger) trigger.setAttribute('aria-expanded', 'false');
+        });
+    }
+
+    function toggleRecurringActionsMenu(trigger, event) {
+        event?.stopPropagation();
+        const menu = trigger?.parentElement?.querySelector('.recurring-actions-menu');
+        if (!menu) return;
+
+        const willOpen = menu.hidden;
+        closeRecurringActionsMenus(menu);
+        menu.hidden = !willOpen;
+        trigger.setAttribute('aria-expanded', String(willOpen));
+
+        if (willOpen) menu.querySelector('[role="menuitem"]')?.focus();
+    }
+
+    document.addEventListener('click', (event) => {
+        if (!event.target.closest('.recurring-actions')) closeRecurringActionsMenus();
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        const openMenu = document.querySelector('.recurring-actions-menu:not([hidden])');
+        if (!openMenu) return;
+        const trigger = openMenu.parentElement?.querySelector('.recurring-actions-trigger');
+        closeRecurringActionsMenus();
+        trigger?.focus();
+    });
 
     function getDaysBetween(date1, date2) {
         const d1 = new Date(date1);
@@ -10795,6 +10985,8 @@ function processRecurringTransactions() {
     function showPaymentHistoryModal(recurringId) {
         const recurring = window.recurringTransactions.find((item) => item.id === recurringId);
         if (!recurring) return;
+        const paymentHistory = recurring.paymentHistory || [];
+        const totalPaidAmount = paymentHistory.reduce((total, payment) => total + (Number(payment.amount) || 0), 0);
 
         const modal = document.createElement('div');
         modal.className = 'modal';
@@ -10806,6 +10998,10 @@ function processRecurringTransactions() {
                     <i class="fas fa-times"></i>
                 </button>
                 <h2><i class="fas fa-history"></i> Payment History: ${escapeHtml(recurring.name)}</h2>
+                <div class="payment-history-total">
+                    <span>Total amount paid</span>
+                    <strong>${formatCurrency(totalPaidAmount)}</strong>
+                </div>
                 ${recurring.paymentStats ? `
                 <div class="payment-gauge">
                     <div class="payment-gauge-bar">
@@ -10825,7 +11021,7 @@ function processRecurringTransactions() {
                     <div style="flex: 1; text-align: center;"><div style="font-size: 10px; color: var(--gray-500);">TOTAL</div><div style="font-size: 18px; font-weight: 700;">${recurring.paymentStats.totalPayments}</div></div>
                 </div>` : ''}
                 <div style="max-height: 400px; overflow-y: auto;">
-                    ${recurring.paymentHistory && recurring.paymentHistory.length > 0 ? recurring.paymentHistory.slice().reverse().map((p) => `
+                    ${paymentHistory.length > 0 ? paymentHistory.slice().reverse().map((p) => `
                         <div class="payment-history-item ${p.timing}">
                             <div>
                                 <div class="payment-history-date">Due: ${formatDate(p.dueDate)}</div>
@@ -10871,6 +11067,8 @@ function processRecurringTransactions() {
     window.__recurringSystemGetNextDueDateStr = getNextDueDateStr;
     window.__recurringSystemGetPremiumRecurringStatus = getPremiumRecurringStatus;
     window.__recurringSystemUpdateRecurringStatsBar = updateRecurringStatsBar;
+    window.closeRecurringActionsMenus = closeRecurringActionsMenus;
+    window.toggleRecurringActionsMenu = toggleRecurringActionsMenu;
 
     window.createRecurringTransaction = window.__recurringSystemCreateRecurringTransaction;
     window.closeRecurringModal = window.__recurringSystemCloseRecurringModal;
@@ -11557,14 +11755,14 @@ function autoDetectCategory(merchant) {
     const categories = expenseCats || [];
     
     const keywordMap = {
-        'restaurant': ['🍔 Food & Groceries'],
+        'restaurant': ['🍔 Food'],
         'cafe': ['☕ Coffee & Drinks'],
         'coffee': ['☕ Coffee & Drinks'],
         'starbucks': ['☕ Coffee & Drinks'],
-        'supermarket': ['🍔 Food & Groceries'],
-        'grocery': ['🍔 Food & Groceries'],
-        'puregold': ['🍔 Food & Groceries'],
-        'savemore': ['🍔 Food & Groceries'],
+        'supermarket': ['🛒 Groceries'],
+        'grocery': ['🛒 Groceries'],
+        'puregold': ['🛒 Groceries'],
+        'savemore': ['🛒 Groceries'],
         'sm': ['🛍️ Shopping'],
         'robinsons': ['🛍️ Shopping'],
         'gas': ['🚗 Gas / Fuel'],
@@ -11586,6 +11784,11 @@ function autoDetectCategory(merchant) {
         'phone': ['📱 Phone Bill'],
         'globe': ['📱 Phone Bill'],
         'smart': ['📱 Phone Bill'],
+        'load': ['📲 Mobile Load'],
+        'motorcycle': ['🏍️ Motor Maintenance'],
+        'motor repair': ['🏍️ Motor Maintenance'],
+        'motor maintenance': ['🏍️ Motor Maintenance'],
+        'change oil': ['🏍️ Motor Maintenance'],
         'rent': ['🏠 Rent / Mortgage'],
         'school': ['📚 Education / School'],
         'clothing': ['👕 Clothing'],
@@ -11598,12 +11801,12 @@ function autoDetectCategory(merchant) {
         'cinema': ['🎮 Entertainment / Games'],
         'netflix': ['📺 Streaming Subscriptions'],
         'spotify': ['📺 Streaming Subscriptions'],
-        'jollibee': ['🍔 Food & Groceries'],
-        'mcdonald': ['🍔 Food & Groceries'],
-        'kfc': ['🍔 Food & Groceries'],
-        'chowking': ['🍔 Food & Groceries'],
-        '7-eleven': ['🍔 Food & Groceries'],
-        'ministop': ['🍔 Food & Groceries'],
+        'jollibee': ['🍔 Food'],
+        'mcdonald': ['🍔 Food'],
+        'kfc': ['🍔 Food'],
+        'chowking': ['🍔 Food'],
+        '7-eleven': ['🛒 Groceries'],
+        'ministop': ['🛒 Groceries'],
         'gcash': ['💸 Transfer to GCash'],
         'shopee': ['🛍️ Shopping'],
         'lazada': ['🛍️ Shopping'],

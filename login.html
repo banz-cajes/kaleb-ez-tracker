@@ -7,7 +7,7 @@
     <meta name="description" content="Sign in to Kaleb Ez Tracker — your personal finance dashboard.">
     <meta name="theme-color" content="#6366f1">
     <title>Login - Kaleb Ez Tracker</title>
-    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192x192.png">
+    <link rel="icon" type="image/png" href="images/kaleb-agila-logo-v2.png">
     <!-- Fonts & Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
@@ -18,9 +18,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
     <!-- ICONS -->
-    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192x192.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512x512.png">
+    <link rel="apple-touch-icon" href="images/kaleb-agila-logo-v2.png">
 
     <!-- Config -->
     <script src="js/config.js"></script>
@@ -192,6 +190,15 @@
         .logo {
             text-align: center;
             margin-bottom: 32px;
+        }
+
+        .logo img {
+            width: 88px;
+            height: 88px;
+            object-fit: contain;
+            display: block;
+            margin: 0 auto 12px;
+            filter: drop-shadow(0 8px 18px rgba(79, 70, 229, 0.2));
         }
 
         .logo h1 {
@@ -446,6 +453,7 @@
 
     <div class="login-container">
         <div class="logo">
+            <img src="images/kaleb-agila-logo-v2.png" alt="Kaleb Agila logo">
             <h1>Kaleb Ez Tracker</h1>
             <p>Track your finances, achieve your goals</p>
         </div>

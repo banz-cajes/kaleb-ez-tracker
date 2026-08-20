@@ -9,7 +9,7 @@
     <title>Kaleb · Financial Dashboard</title>
 
     <!-- ICON -->
-    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192x192.png">
+    <link rel="icon" type="image/png" href="images/kaleb-agila-logo-v2.png">
 
     <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#6366f1">
@@ -40,9 +40,7 @@
     <link rel="manifest" href="manifest.json">
 
     <!-- ICONS -->
-    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192x192.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512x512.png">
+    <link rel="apple-touch-icon" href="images/kaleb-agila-logo-v2.png">
 
 </head>
 
@@ -70,11 +68,7 @@
     <!-- Top Bar with Logo, Desktop Navigation, and User Actions -->
     <div class="top-bar">
         <div class="logo-animated" onclick="switchView('dashboard')">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                <path d="M16 2L2 9L16 16L30 9L16 2Z" stroke="currentColor" stroke-width="2" fill="none" />
-                <path d="M2 16L16 23L30 16" stroke="currentColor" stroke-width="2" fill="none" stroke-dasharray="4 4" />
-                <circle cx="16" cy="16" r="3" fill="currentColor" />
-            </svg>
+            <img class="app-logo-image" src="images/kaleb-agila-logo-v2.png" alt="">
             <span>K A L E B</span>
         </div>
 
@@ -189,26 +183,26 @@
             </div>
 
             <!-- Stats Grid -->
-            <div class="stats-grid">
-                <div class="stat-card" onclick="showDetailedStats('today')">
+            <div class="stats-grid" data-layout-group="stats">
+                <div class="stat-card" data-dashboard-card="today" onclick="showDetailedStats('today')">
                     <div class="stat-icon"><i class="fas fa-shopping-cart"></i></div>
                     <p class="stat-label">Today's Spending</p>
                     <h3 id="spentToday" class="stat-value">₱ 0.00</h3>
                     <div class="stat-trend" id="todayTrend">-12%</div>
                 </div>
-                <div class="stat-card" onclick="showDetailedStats('week')">
+                <div class="stat-card" data-dashboard-card="week" onclick="showDetailedStats('week')">
                     <div class="stat-icon"><i class="fas fa-calendar-week"></i></div>
                     <p class="stat-label">This Week</p>
                     <h3 id="spent7Days" class="stat-value">₱ 0.00</h3>
                     <div class="stat-trend" id="weekTrend">+5%</div>
                 </div>
-                <div class="stat-card" onclick="showDetailedStats('month')">
+                <div class="stat-card" data-dashboard-card="month" onclick="showDetailedStats('month')">
                     <div class="stat-icon"><i class="fas fa-calendar-alt"></i></div>
                     <p class="stat-label">This Month</p>
                     <h3 id="spentMonth" class="stat-value">₱ 0.00</h3>
                     <div class="stat-trend" id="monthTrend">-3%</div>
                 </div>
-                <div class="stat-card" onclick="showDetailedStats('cash')">
+                <div class="stat-card" data-dashboard-card="cash" onclick="showDetailedStats('cash')">
                     <div class="stat-icon"><i class="fas fa-money-bill-wave"></i></div>
                     <p class="stat-label">Cash on Hand</p>
                     <h3 id="cashOnHand" class="stat-value">₱ 0.00</h3>
@@ -218,9 +212,9 @@
 
             <!-- Overview Cards -->
             <!-- Remove the Savings Breakdown card and replace with All Time Stats -->
-            <div class="overview-grid">
+            <div class="overview-grid" data-layout-group="goals">
                 <!-- Expense Limit Card -->
-                <div class="overview-card">
+                <div class="overview-card" data-dashboard-card="expense-limit">
                     <div class="card-header">
                         <h3><i class="fas fa-chart-line"></i> Expense Limit</h3>
                         <button class="icon-btn" onclick="toggleInput('budgetGroup')"><i
@@ -244,7 +238,7 @@
                 </div>
 
                 <!-- Debt Tracker Card -->
-                <div class="overview-card">
+                <div class="overview-card" data-dashboard-card="debt-tracker">
                     <div class="card-header">
                         <h3><i class="fas fa-credit-card"></i> Debt Tracker</h3>
                         <button class="icon-btn" onclick="toggleInput('debtGroup')"><i class="fas fa-pen"></i></button>
@@ -265,7 +259,7 @@
                 </div>
 
                 <!-- Savings Goal Card -->
-                <div class="overview-card">
+                <div class="overview-card" data-dashboard-card="savings-goal">
                     <div class="card-header">
                         <h3><i class="fas fa-piggy-bank"></i> Savings Goal</h3>
                         <button class="icon-btn" onclick="toggleInput('savingsGroup')"><i
@@ -287,8 +281,25 @@
                     </div>
                 </div>
 
-                <!-- NEW: All Time Stats Card (replaces Savings Breakdown) -->
-                <div class="overview-card all-time-stats">
+            </div>
+
+            <!-- Monthly Breakdown Section -->
+            <div class="overview-grid dashboard-breakdown-grid" data-layout-group="insights" style="margin-bottom: var(--space-xl);">
+                <div class="overview-card" data-dashboard-card="monthly-breakdown">
+                    <div class="card-header">
+                        <h3><i class="fas fa-chart-pie"></i> Monthly Breakdown</h3>
+                    </div>
+                    <div class="card-body">
+                        <h4 style="font-size: 12px; color: var(--gray-500); margin-bottom: 8px;">Expenses</h4>
+                        <div id="expenseHistory" style="max-height: 200px; overflow-y: auto;"></div>
+                        <div style="border-top: 1px solid var(--gray-200); margin: 12px 0;"></div>
+                        <h4 style="font-size: 12px; color: var(--gray-500); margin-bottom: 8px;">Income</h4>
+                        <div id="incomeHistory" style="max-height: 200px; overflow-y: auto;"></div>
+                    </div>
+                </div>
+
+                <!-- All Time Stats Card -->
+                <div class="overview-card all-time-stats" data-dashboard-card="all-time-stats">
                     <div class="card-header">
                         <h3><i class="fas fa-infinity"></i> All Time Stats</h3>
                     </div>
@@ -310,42 +321,25 @@
                             <span class="all-time-label">Net Worth</span>
                             <span id="allTimeNetWorth" class="all-time-value net-value">₱ 0.00</span>
                         </div>
-                        <!-- ✅ ADD TIME TRACKING HERE -->
-        <div class="all-time-divider"></div>
-        <div class="all-time-item" style="padding: 8px 0; flex-wrap: wrap; gap: 8px;">
-            <span class="all-time-label" style="font-size: 11px;">
-                <i class="fas fa-clock" style="color: var(--primary);"></i> Tracking History
-            </span>
-            <div style="display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; font-weight: 600;">
-                <span id="timeYears" style="color: var(--primary);">0 yr</span>
-                <span id="timeMonths" style="color: var(--info);">0 mo</span>
-                <span id="timeDays" style="color: var(--success);">0 days</span>
-                <span id="timeTotalDays" style="color: var(--gray-500); font-weight: 400;">(0 days total)</span>
-                    </div>
-                </div>
-            </div>
-            </div>
-            </div>
-
-            <!-- Monthly Breakdown Section -->
-            <div class="overview-grid" style="margin-bottom: var(--space-xl);">
-                <div class="overview-card">
-                    <div class="card-header">
-                        <h3><i class="fas fa-chart-pie"></i> Monthly Breakdown</h3>
-                    </div>
-                    <div class="card-body">
-                        <h4 style="font-size: 12px; color: var(--gray-500); margin-bottom: 8px;">Expenses</h4>
-                        <div id="expenseHistory" style="max-height: 200px; overflow-y: auto;"></div>
-                        <div style="border-top: 1px solid var(--gray-200); margin: 12px 0;"></div>
-                        <h4 style="font-size: 12px; color: var(--gray-500); margin-bottom: 8px;">Income</h4>
-                        <div id="incomeHistory" style="max-height: 200px; overflow-y: auto;"></div>
+                        <div class="all-time-divider"></div>
+                        <div class="all-time-item" style="padding: 8px 0; flex-wrap: wrap; gap: 8px;">
+                            <span class="all-time-label" style="font-size: 11px;">
+                                <i class="fas fa-clock" style="color: var(--primary);"></i> Tracking History
+                            </span>
+                            <div style="display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; font-weight: 600;">
+                                <span id="timeYears" style="color: var(--primary);">0 yr</span>
+                                <span id="timeMonths" style="color: var(--info);">0 mo</span>
+                                <span id="timeDays" style="color: var(--success);">0 days</span>
+                                <span id="timeTotalDays" style="color: var(--gray-500); font-weight: 400;">(0 days total)</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <!-- Charts Section -->
-            <div class="charts-section">
-                <div class="chart-card expanded">
+            <div class="charts-section" data-layout-group="charts">
+                <div class="chart-card expanded" data-dashboard-card="category-chart">
                     <div class="card-header">
                         <h3><i class="fas fa-chart-pie"></i> Spending by Category</h3><select id="categoryPeriod"
                             class="period-select" onchange="updateCategoryChart()">
@@ -357,7 +351,7 @@
                     <div class="chart-container"><canvas id="categoryChart"></canvas></div>
                     <div id="categoryLegend" class="chart-legend"></div>
                 </div>
-                <div class="chart-card expanded">
+                <div class="chart-card expanded" data-dashboard-card="trend-chart">
                     <div class="card-header">
                         <h3><i class="fas fa-chart-line"></i> Spending Trend</h3><select id="trendPeriod"
                             class="period-select" onchange="updateTrendChart()">
@@ -809,17 +803,16 @@
                     <!-- Add after Privacy & Security section -->
                     <h2><i class="fas fa-bell"></i> Notifications</h2>
                     <div class="settings-card">
-                        <div class="setting-item">
+                        <div class="setting-item notification-toggle-row">
                             <label>
                                 <i class="fas fa-bell"></i> Push Notifications
                                 <span style="font-size: 11px; color: var(--gray-500); display: block;">
                                     Get reminders for bills, budgets, and goals
                                 </span>
                             </label>
-                            <div class="toggle-switch">
+                            <label class="toggle-switch" aria-label="Enable push notifications">
                                 <input type="checkbox" id="notificationToggle" onchange="toggleNotifications()">
-                                <label for="notificationToggle">Enable</label>
-                            </div>
+                            </label>
                         </div>
 
                         <div id="notificationSettings" style="display: none;">
@@ -850,6 +843,23 @@
                                     <option value="0">On due date</option>
                                 </select>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mobile-dashboard-layout-setting">
+                    <h2><i class="fas fa-mobile-alt"></i> Mobile Dashboard</h2>
+                    <div class="settings-card">
+                        <div class="setting-item">
+                            <label>
+                                <i class="fas fa-grip-vertical"></i> Card Arrangement
+                                <span style="font-size: 11px; color: var(--gray-500); display: block;">
+                                    Change the order of cards on your mobile dashboard
+                                </span>
+                            </label>
+                            <button class="btn-primary" type="button" onclick="openDashboardLayoutEditor()">
+                                <i class="fas fa-sliders-h"></i> Customize Layout
+                            </button>
                         </div>
                     </div>
                 </div>

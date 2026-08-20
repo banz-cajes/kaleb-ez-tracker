@@ -1,5 +1,5 @@
 // ===== KALEB SERVICE WORKER - CLEAN WORKING VERSION =====
-const CACHE_NAME = 'kaleb-v6';
+const CACHE_NAME = 'kaleb-v7';
 const OFFLINE_URL = '/offline.html';
 
 // Static assets to cache
@@ -9,6 +9,7 @@ const STATIC_ASSETS = [
   '/login.html',
   '/offline.html',
   '/css/styles.css',
+  '/images/kaleb-agila-logo-v2.png',
   '/js/app.js',
   '/js/config.js',
   '/js/analytics.js',
