@@ -5310,6 +5310,13 @@ input[type="datetime-local"].form-control {
         flex: 1;
         margin-bottom: 0;
     }
+
+    /* Do not let the toggle's label consume half of the settings row. */
+    .setting-item > .toggle-switch {
+        flex: 0 0 auto;
+        width: auto;
+        margin-left: auto;
+    }
 }
 
 /* Mobile view - responsive toggles */
@@ -11324,5 +11331,300 @@ body {
         right: 12px;
         width: calc(100vw - 24px);
         max-width: calc(100vw - 24px);
+    }
+}
+
+/* ===== CASH-FLOW FORECAST ===== */
+.cash-flow-forecast {
+    margin-bottom: var(--space-xl);
+    padding: 22px;
+    overflow: hidden;
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-sm);
+}
+
+.cash-flow-header,
+.cash-flow-current,
+.cash-flow-upcoming-heading,
+.cash-flow-event {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.cash-flow-header h3 {
+    margin: 0;
+    color: var(--gray-800);
+    font-size: 1rem;
+}
+
+.cash-flow-toggle {
+    width: 100%;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+}
+
+.cash-flow-toggle:focus-visible {
+    outline: 3px solid rgba(124, 58, 237, 0.2);
+    outline-offset: 6px;
+    border-radius: var(--radius-md);
+}
+
+.cash-flow-chevron {
+    flex-shrink: 0;
+    color: var(--primary);
+    transition: transform var(--transition-base);
+}
+
+.cash-flow-toggle[aria-expanded="true"] .cash-flow-chevron {
+    transform: rotate(180deg);
+}
+
+.cash-flow-details[hidden] {
+    display: none !important;
+}
+
+.cash-flow-details {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--gray-200);
+}
+
+.cash-flow-details-status {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.cash-flow-header h3 i,
+.cash-flow-upcoming-heading i {
+    margin-right: 7px;
+    color: var(--primary);
+}
+
+.cash-flow-header p {
+    margin: 5px 0 0;
+    color: var(--gray-500);
+    font-size: 12px;
+}
+
+.cash-flow-health {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 7px;
+    padding: 7px 11px;
+    border-radius: var(--radius-full);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.cash-flow-health.positive {
+    color: var(--success);
+    background: rgba(16, 185, 129, 0.12);
+}
+
+.cash-flow-health.warning {
+    color: var(--danger);
+    background: rgba(239, 68, 68, 0.12);
+}
+
+.cash-flow-health.neutral {
+    color: var(--gray-600);
+    background: var(--gray-100);
+}
+
+.cash-flow-current {
+    margin: 18px 0 14px;
+    padding: 14px 16px;
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.11), rgba(59, 130, 246, 0.07));
+    border: 1px solid rgba(124, 58, 237, 0.16);
+    border-radius: var(--radius-lg);
+}
+
+.cash-flow-current > div:first-child {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.cash-flow-eyebrow,
+.cash-flow-period-label {
+    color: var(--gray-500);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+#cashFlowCurrent {
+    color: var(--gray-900);
+    font-size: 1.35rem;
+}
+
+.cash-flow-lowest {
+    color: var(--gray-600);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.cash-flow-periods {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.cash-flow-period {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px;
+    background: var(--gray-100);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-lg);
+}
+
+.cash-flow-period.featured {
+    background: rgba(124, 58, 237, 0.07);
+    border-color: rgba(124, 58, 237, 0.22);
+}
+
+.cash-flow-period strong {
+    overflow: hidden;
+    color: var(--gray-800);
+    font-size: 1rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cash-flow-change {
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.cash-flow-change.positive,
+.cash-flow-event-amount.income {
+    color: var(--success);
+}
+
+.cash-flow-change.negative,
+.cash-flow-event-amount.expense {
+    color: var(--danger);
+}
+
+.cash-flow-change.neutral {
+    color: var(--gray-500);
+}
+
+.cash-flow-upcoming {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--gray-200);
+}
+
+.cash-flow-upcoming-heading {
+    margin-bottom: 6px;
+    color: var(--gray-700);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+#cashFlowEventCount {
+    color: var(--gray-500);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.cash-flow-event {
+    padding: 9px 0;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.cash-flow-event:last-child {
+    border-bottom: 0;
+}
+
+.cash-flow-event-main {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 9px;
+}
+
+.cash-flow-event-icon {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    place-items: center;
+    color: var(--primary);
+    background: rgba(124, 58, 237, 0.1);
+    border-radius: 9px;
+    font-size: 11px;
+}
+
+.cash-flow-event-copy {
+    min-width: 0;
+}
+
+.cash-flow-event-name {
+    display: block;
+    overflow: hidden;
+    color: var(--gray-700);
+    font-size: 12px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cash-flow-event-date {
+    display: block;
+    margin-top: 2px;
+    color: var(--gray-500);
+    font-size: 10px;
+}
+
+.cash-flow-event-amount {
+    flex-shrink: 0;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.cash-flow-empty {
+    padding: 18px 0 8px;
+    color: var(--gray-500);
+    font-size: 12px;
+    text-align: center;
+}
+
+@media (max-width: 768px) {
+    .cash-flow-forecast {
+        margin: 0 12px var(--space-lg);
+        padding: 16px;
+    }
+
+    .cash-flow-header,
+    .cash-flow-current {
+        align-items: flex-start;
+    }
+
+    .cash-flow-header {
+        align-items: center;
+        flex-direction: row;
+    }
+
+    .cash-flow-periods {
+        grid-template-columns: 1fr;
+    }
+
+    .cash-flow-current {
+        flex-direction: column;
+        gap: 8px;
     }
 }

@@ -210,6 +210,63 @@
                 </div>
             </div>
 
+            <!-- Cash-Flow Forecast -->
+            <section class="cash-flow-forecast" data-layout-group="cash-flow" aria-labelledby="cashFlowForecastTitle">
+                <button type="button" class="cash-flow-header cash-flow-toggle" aria-expanded="false"
+                    aria-controls="cashFlowForecastDetails" onclick="toggleCashFlowForecast()">
+                    <div>
+                        <h3 id="cashFlowForecastTitle"><i class="fas fa-chart-line"></i> Cash-Flow Forecast</h3>
+                        <p>Click or tap to view your 7-, 30-, and 90-day projection.</p>
+                    </div>
+                    <i class="fas fa-chevron-down cash-flow-chevron" aria-hidden="true"></i>
+                </button>
+
+                <div id="cashFlowForecastDetails" class="cash-flow-details" hidden>
+                    <div class="cash-flow-details-status">
+                        <div id="cashFlowHealth" class="cash-flow-health neutral">
+                            <i class="fas fa-circle-info"></i>
+                            <span>Calculating</span>
+                        </div>
+                    </div>
+
+                    <div class="cash-flow-current">
+                        <div>
+                            <span class="cash-flow-eyebrow">Available cash today</span>
+                            <strong id="cashFlowCurrent">&#8369; 0.00</strong>
+                        </div>
+                        <div id="cashFlowLowest" class="cash-flow-lowest">Lowest projected: &#8369; 0.00</div>
+                    </div>
+
+                    <div class="cash-flow-periods">
+                        <article class="cash-flow-period">
+                            <span class="cash-flow-period-label">In 7 days</span>
+                            <strong id="cashFlow7">&#8369; 0.00</strong>
+                            <span id="cashFlow7Change" class="cash-flow-change neutral">No scheduled change</span>
+                        </article>
+                        <article class="cash-flow-period featured">
+                            <span class="cash-flow-period-label">In 30 days</span>
+                            <strong id="cashFlow30">&#8369; 0.00</strong>
+                            <span id="cashFlow30Change" class="cash-flow-change neutral">No scheduled change</span>
+                        </article>
+                        <article class="cash-flow-period">
+                            <span class="cash-flow-period-label">In 90 days</span>
+                            <strong id="cashFlow90">&#8369; 0.00</strong>
+                            <span id="cashFlow90Change" class="cash-flow-change neutral">No scheduled change</span>
+                        </article>
+                    </div>
+
+                    <div class="cash-flow-upcoming">
+                        <div class="cash-flow-upcoming-heading">
+                            <span><i class="fas fa-calendar-days"></i> Next scheduled activity</span>
+                            <span id="cashFlowEventCount">0 events</span>
+                        </div>
+                        <div id="cashFlowUpcomingList" class="cash-flow-upcoming-list">
+                            <div class="cash-flow-empty">Add recurring transactions or bills to build your forecast.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- Overview Cards -->
             <!-- Remove the Savings Breakdown card and replace with All Time Stats -->
             <div class="overview-grid" data-layout-group="goals">

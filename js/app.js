@@ -770,6 +770,261 @@ async function saveToFirebase() {
     }
 }
 
+function parseCashFlowDate(value) {
+    if (!value) return null;
+    if (value instanceof Date) {
+        const copy = new Date(value);
+        return Number.isNaN(copy.getTime()) ? null : copy;
+    }
+
+    const dateOnlyMatch = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const parsed = dateOnlyMatch
+        ? new Date(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3]))
+        : new Date(value);
+
+    if (Number.isNaN(parsed.getTime())) return null;
+    parsed.setHours(0, 0, 0, 0);
+    return parsed;
+}
+
+function addCashFlowDays(date, days) {
+    const result = new Date(date);
+    result.setDate(result.getDate() + days);
+    result.setHours(0, 0, 0, 0);
+    return result;
+}
+
+function getClampedCashFlowDate(year, month, day) {
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    return new Date(year, month, Math.min(Math.max(day, 1), lastDay));
+}
+
+function advanceCashFlowOccurrence(date, recurring) {
+    const frequency = recurring.frequency || 'monthly';
+    const targetDay = Number.parseInt(recurring.dayOfMonth, 10) || date.getDate();
+
+    if (frequency === 'daily') return addCashFlowDays(date, 1);
+    if (frequency === 'weekly') return addCashFlowDays(date, 7);
+    if (frequency === 'yearly') {
+        return getClampedCashFlowDate(date.getFullYear() + 1, date.getMonth(), targetDay);
+    }
+
+    return getClampedCashFlowDate(date.getFullYear(), date.getMonth() + 1, targetDay);
+}
+
+function getFirstCashFlowOccurrence(recurring, today) {
+    let occurrence = parseCashFlowDate(recurring.nextDueDate);
+
+    if (!occurrence) {
+        occurrence = parseCashFlowDate(recurring.createdAt) || new Date(today);
+        const targetDay = Number.parseInt(recurring.dayOfMonth, 10) || occurrence.getDate();
+
+        if (recurring.frequency === 'monthly') {
+            occurrence = getClampedCashFlowDate(today.getFullYear(), today.getMonth(), targetDay);
+            if (occurrence < today) occurrence = getClampedCashFlowDate(today.getFullYear(), today.getMonth() + 1, targetDay);
+        } else if (recurring.frequency === 'yearly') {
+            occurrence = getClampedCashFlowDate(today.getFullYear(), occurrence.getMonth(), targetDay);
+            if (occurrence < today) occurrence = getClampedCashFlowDate(today.getFullYear() + 1, occurrence.getMonth(), targetDay);
+        }
+    }
+
+    let safetyCounter = 0;
+    while (occurrence < today && safetyCounter < 5000) {
+        occurrence = advanceCashFlowOccurrence(occurrence, recurring);
+        safetyCounter += 1;
+    }
+
+    return occurrence;
+}
+
+function buildCashFlowForecast(days = 90) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const endDate = addCashFlowDays(today, days);
+
+    const currentBalance = (window.transactions || []).reduce((balance, transaction) => {
+        const transactionDate = parseCashFlowDate(transaction.date);
+        if (transactionDate && transactionDate > today) return balance;
+        const amount = Number(transaction.amount) || 0;
+        if (transaction.type === 'income') return balance + amount;
+        if (transaction.type === 'expense') return balance - amount;
+        return balance;
+    }, 0);
+
+    const events = [];
+
+    (window.transactions || []).forEach((transaction) => {
+        const transactionDate = parseCashFlowDate(transaction.date);
+        const amount = Number(transaction.amount) || 0;
+        if (!transactionDate || transactionDate <= today || transactionDate > endDate || amount <= 0) return;
+
+        events.push({
+            date: transactionDate,
+            name: transaction.note || transaction.category || 'Scheduled transaction',
+            amount: transaction.type === 'income' ? amount : -amount,
+            kind: 'transaction'
+        });
+    });
+
+    (window.recurringTransactions || []).forEach((recurring) => {
+        if (recurring.isActive === false) return;
+
+        const amount = Number(recurring.amount) || 0;
+        if (amount <= 0) return;
+
+        let occurrence = getFirstCashFlowOccurrence(recurring, today);
+        let safetyCounter = 0;
+
+        while (occurrence && occurrence <= endDate && safetyCounter < 500) {
+            if (occurrence >= today) {
+                const isIncome = recurring.type === 'income';
+                events.push({
+                    date: new Date(occurrence),
+                    name: recurring.name || recurring.category || 'Recurring transaction',
+                    amount: isIncome ? amount : -amount,
+                    kind: 'recurring'
+                });
+            }
+            occurrence = advanceCashFlowOccurrence(occurrence, recurring);
+            safetyCounter += 1;
+        }
+    });
+
+    (window.bills || []).forEach((bill) => {
+        if (bill.isPaid) return;
+        const dueDate = parseCashFlowDate(bill.dueDate);
+        const amount = Number(bill.amount) || 0;
+        if (!dueDate || amount <= 0 || dueDate < today || dueDate > endDate) return;
+
+        events.push({
+            date: dueDate,
+            name: bill.name || 'Bill payment',
+            amount: -amount,
+            kind: 'bill'
+        });
+    });
+
+    events.sort((a, b) => a.date - b.date);
+
+    const projectionForDays = (periodDays) => {
+        const periodEnd = addCashFlowDays(today, periodDays);
+        return currentBalance + events
+            .filter((event) => event.date <= periodEnd)
+            .reduce((total, event) => total + event.amount, 0);
+    };
+
+    let runningBalance = currentBalance;
+    let lowestBalance = currentBalance;
+    const dailyChanges = new Map();
+    events.forEach((event) => {
+        const dateKey = `${event.date.getFullYear()}-${event.date.getMonth()}-${event.date.getDate()}`;
+        dailyChanges.set(dateKey, (dailyChanges.get(dateKey) || 0) + event.amount);
+    });
+    dailyChanges.forEach((change) => {
+        runningBalance += change;
+        lowestBalance = Math.min(lowestBalance, runningBalance);
+    });
+
+    return {
+        currentBalance,
+        events,
+        lowestBalance,
+        projections: {
+            7: projectionForDays(7),
+            30: projectionForDays(30),
+            90: projectionForDays(90)
+        }
+    };
+}
+
+function toggleCashFlowForecast() {
+    const details = document.getElementById('cashFlowForecastDetails');
+    const toggle = document.querySelector('.cash-flow-toggle');
+    if (!details || !toggle) return;
+
+    const shouldOpen = details.hidden;
+    details.hidden = !shouldOpen;
+    toggle.setAttribute('aria-expanded', String(shouldOpen));
+
+    if (shouldOpen) updateCashFlowForecast();
+}
+
+function updateCashFlowForecast() {
+    const container = document.querySelector('.cash-flow-forecast');
+    if (!container) return;
+
+    const forecast = buildCashFlowForecast(90);
+    const currentElement = document.getElementById('cashFlowCurrent');
+    const lowestElement = document.getElementById('cashFlowLowest');
+    const healthElement = document.getElementById('cashFlowHealth');
+    const countElement = document.getElementById('cashFlowEventCount');
+    const upcomingList = document.getElementById('cashFlowUpcomingList');
+
+    if (currentElement) currentElement.textContent = formatCurrency(forecast.currentBalance);
+    if (lowestElement) lowestElement.textContent = `Lowest projected: ${formatCurrency(forecast.lowestBalance)}`;
+
+    [7, 30, 90].forEach((days) => {
+        const projectedBalance = forecast.projections[days];
+        const change = projectedBalance - forecast.currentBalance;
+        const valueElement = document.getElementById(`cashFlow${days}`);
+        const changeElement = document.getElementById(`cashFlow${days}Change`);
+
+        if (valueElement) valueElement.textContent = formatCurrency(projectedBalance);
+        if (changeElement) {
+            changeElement.className = `cash-flow-change ${change > 0 ? 'positive' : change < 0 ? 'negative' : 'neutral'}`;
+            changeElement.textContent = change === 0
+                ? 'No scheduled change'
+                : `${change > 0 ? '+' : '-'}${formatCurrency(Math.abs(change))} scheduled`;
+        }
+    });
+
+    if (healthElement) {
+        if (forecast.lowestBalance < 0) {
+            healthElement.className = 'cash-flow-health warning';
+            healthElement.innerHTML = '<i class="fas fa-triangle-exclamation"></i><span>Shortfall predicted</span>';
+        } else if (forecast.events.length > 0) {
+            healthElement.className = 'cash-flow-health positive';
+            healthElement.innerHTML = '<i class="fas fa-circle-check"></i><span>Cash flow looks safe</span>';
+        } else {
+            healthElement.className = 'cash-flow-health neutral';
+            healthElement.innerHTML = '<i class="fas fa-circle-info"></i><span>No scheduled activity</span>';
+        }
+    }
+
+    if (countElement) countElement.textContent = `${forecast.events.length} ${forecast.events.length === 1 ? 'event' : 'events'}`;
+
+    if (upcomingList) {
+        const upcoming = forecast.events.slice(0, 5);
+        if (upcoming.length === 0) {
+            upcomingList.innerHTML = '<div class="cash-flow-empty">Add recurring transactions or bills to build your forecast.</div>';
+        } else {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            upcomingList.innerHTML = upcoming.map((event) => {
+                const isIncome = event.amount > 0;
+                const isToday = event.date.getTime() === today.getTime();
+                const dateLabel = isToday
+                    ? 'Today'
+                    : event.date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: event.date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined });
+                const safeName = typeof escapeHtml === 'function' ? escapeHtml(event.name) : event.name;
+
+                return `
+                    <div class="cash-flow-event">
+                        <div class="cash-flow-event-main">
+                            <span class="cash-flow-event-icon"><i class="fas ${event.kind === 'bill' ? 'fa-file-invoice-dollar' : event.kind === 'transaction' ? 'fa-calendar-check' : 'fa-rotate'}"></i></span>
+                            <span class="cash-flow-event-copy">
+                                <span class="cash-flow-event-name">${safeName}</span>
+                                <span class="cash-flow-event-date">${dateLabel}${event.kind === 'bill' ? ' - Bill' : event.kind === 'transaction' ? ' - Scheduled' : ' - Recurring'}</span>
+                            </span>
+                        </div>
+                        <span class="cash-flow-event-amount ${isIncome ? 'income' : 'expense'}">${isIncome ? '+' : '-'}${formatCurrency(Math.abs(event.amount))}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+    }
+}
+
 function render() {
     const tbody = document.getElementById('tbody');
     const searchInput = document.getElementById('searchBar');
@@ -906,6 +1161,7 @@ function render() {
     document.getElementById('spentMonth') && (document.getElementById('spentMonth').innerText = formatCurrency(monthSpent));
     document.getElementById('cashOnHand') && (document.getElementById('cashOnHand').innerText = formatCurrency(cashOnHand));
     document.getElementById('balanceLabel') && (document.getElementById('balanceLabel').innerHTML = `<i class="fas fa-chart-line"></i> Net: ${formatCurrency(monthIncome - monthExpense)} | Saved: ${formatCurrency(monthSavings)}`);
+    updateCashFlowForecast();
 
 // ===== CALCULATE TRACKING HISTORY =====
 function calculateTrackingHistory() {
@@ -8513,7 +8769,7 @@ showPanel() {
             </h2>
             
             <!-- Browser Notifications Status -->
-            <div style="background: var(--gray-100); border-radius: 16px; padding: 16px; margin-bottom: 16px; border: 1px solid var(--gray-200);">
+            <div style="display: ${Notification.permission === 'granted' ? 'none' : 'block'}; background: var(--gray-100); border-radius: 16px; padding: 16px; margin-bottom: 16px; border: 1px solid var(--gray-200);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                     <div style="display: flex; align-items: center; gap: 10px;">
                         <i class="fas fa-globe" style="color: var(--primary); font-size: 18px;"></i>
